@@ -167,7 +167,7 @@ marketmon template config [-o PATH] [--force]
 marketmon template search [-o PATH] [--force]
 marketmon login [-c PATH]
 marketmon check [-c PATH]
-marketmon report [-c PATH] [-n COUNT]
+marketmon report [-c PATH] [-n COUNT] [-s "SEARCH NAME"]
 marketmon watch [-c PATH]
 marketmon add SEARCH.yaml [-c PATH] [--replace]
 marketmon list [-c PATH] [--json]
@@ -195,7 +195,12 @@ candidate status, price, title, location, configured search name, and URL:
 ```powershell
 marketmon report -n 10
 marketmon report -n 5 -c C:\monitor\config.yaml
+marketmon report -s "Flair 58 Plus" -n 10
+marketmon report -s "Flair 58 Plus" -s "Spider Putter" -n 10
 ```
+
+Reports include all active searches by default. `-s/--search` selects an exact
+search name case-insensitively and may be repeated to report on several products.
 
 ## Updating a Raspberry Pi remotely
 
