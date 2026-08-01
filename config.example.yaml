@@ -42,6 +42,9 @@ searches:
     url: https://www.facebook.com/marketplace/search/?query=example
     min_price: 100
     max_price: 500
+    # Closest-match status messages require at least this much title similarity.
+    # Exact matches are unaffected. Raise this if fallback suggestions are noisy.
+    minimum_relevance: 0.20
     include_any:
       - example
       - alternate product name
