@@ -58,23 +58,36 @@ def _time_to_minutes(value: Any, field_name: str) -> int:
     return hour * 60 + minute
 
 
-def load_config(path: str | Path) -> AppConfig:
+def load_config_document(path: str | Path) -> dict[str, Any]:
     config_path = Path(path)
     if not config_path.exists():
         raise ConfigError(
             f"Configuration file not found: {config_path}. "
-            "Copy config.example.yaml to config.yaml first."
+            f"Create one with 'marketmon init -c {config_path}'."
         )
-
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ConfigError("Configuration must be a YAML mapping")
+    return raw
+
+
+def _relative_to_config(value: Any, config_path: Path) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return config_path.parent / path
+
+
+def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppConfig:
+    config_path = Path(config_path)
 
     browser_raw = raw.get("browser", {})
     if not isinstance(browser_raw, dict):
         raise ConfigError("browser must be a mapping")
     browser = BrowserConfig(
-        profile_dir=Path(browser_raw.get("profile_dir", "browser-profile")),
+        profile_dir=_relative_to_config(
+            browser_raw.get("profile_dir", "browser-profile"), config_path
+        ),
         headless=bool(browser_raw.get("headless", True)),
         page_load_timeout_seconds=int(browser_raw.get("page_load_timeout_seconds", 45)),
         scroll_count=int(browser_raw.get("scroll_count", 2)),
@@ -85,10 +98,11 @@ def load_config(path: str | Path) -> AppConfig:
         raise ConfigError("browser.scroll_count cannot be negative")
 
     searches_raw = raw.get("searches")
-    if not isinstance(searches_raw, list) or not searches_raw:
-        raise ConfigError("searches must contain at least one search")
+    if not isinstance(searches_raw, list):
+        raise ConfigError("searches must be a list")
 
     searches: list[SearchConfig] = []
+    search_names: set[str] = set()
     for index, item in enumerate(searches_raw):
         prefix = f"searches[{index}]"
         if not isinstance(item, dict):
@@ -97,6 +111,10 @@ def load_config(path: str | Path) -> AppConfig:
         url = item.get("url")
         if not isinstance(name, str) or not name.strip():
             raise ConfigError(f"{prefix}.name is required")
+        normalized_name = name.strip().casefold()
+        if normalized_name in search_names:
+            raise ConfigError(f"{prefix}.name duplicates another active search")
+        search_names.add(normalized_name)
         if not isinstance(url, str) or "/marketplace/" not in url:
             raise ConfigError(f"{prefix}.url must be a Facebook Marketplace URL")
         min_price = _money_to_cents(item.get("min_price"), f"{prefix}.min_price")
@@ -158,7 +176,9 @@ def load_config(path: str | Path) -> AppConfig:
 
     return AppConfig(
         browser=browser,
-        database_path=Path(raw.get("database_path", "data/marketplace.db")),
+        database_path=_relative_to_config(
+            raw.get("database_path", "data/marketplace.db"), config_path
+        ),
         check_interval_minutes=interval,
         notify_on_first_run=bool(raw.get("notify_on_first_run", False)),
         notifications=NotificationConfig(provider=provider, ntfy=ntfy),
@@ -167,3 +187,8 @@ def load_config(path: str | Path) -> AppConfig:
         quiet_hours=quiet_hours,
         notify_on_startup=bool(raw.get("notify_on_startup", True)),
     )
+
+
+def load_config(path: str | Path) -> AppConfig:
+    config_path = Path(path)
+    return parse_config_document(load_config_document(config_path), config_path)
