@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import marketplace_monitor.monitor as monitor_module
+import marketplace_monitor.ranking as ranking_module
 from marketplace_monitor.models import (
     AppConfig,
     BrowserConfig,
@@ -301,7 +302,7 @@ def test_status_uses_each_search_minimum_relevance(monkeypatch) -> None:
         25_000,
     )
     monkeypatch.setattr(
-        monitor_module,
+        ranking_module,
         "listing_relevance_scores",
         lambda _listings, _search: {candidate.listing_id: 0.19},
     )
