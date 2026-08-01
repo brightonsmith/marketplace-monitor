@@ -76,14 +76,16 @@ class ConsoleNotifier(Notifier):
 
 class NtfyNotifier(Notifier):
     def __init__(self, server: str, topic: str, access_token: str | None = None):
-        self.endpoint = f"{server.rstrip('/')}/{topic}"
+        self.server = server.rstrip("/")
+        self.topic = topic
+        self.endpoint = f"{self.server}/{topic}"
         self.access_token = access_token
 
     def send(self, listing: Listing) -> None:
         location = f"\n{listing.location}" if listing.location else ""
         body = f"{format_price(listing.price_cents)}{location}\n{listing.search_name}"
         payload = {
-            "topic": self.endpoint.rsplit("/", 1)[-1],
+            "topic": self.topic,
             "title": listing.title,
             "message": body,
             "click": listing.url,
@@ -94,7 +96,7 @@ class NtfyNotifier(Notifier):
     def send_status(self, status: StatusUpdate, *, startup: bool = False) -> None:
         title, message, url = _status_content(status, startup=startup)
         payload = {
-            "topic": self.endpoint.rsplit("/", 1)[-1],
+            "topic": self.topic,
             "title": title,
             "message": message,
             "tags": ["white_check_mark"],
@@ -108,7 +110,7 @@ class NtfyNotifier(Notifier):
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
         request = Request(
-            self.endpoint,
+            self.server,
             data=json.dumps(payload).encode("utf-8"),
             headers=headers,
             method="POST",
