@@ -8,7 +8,7 @@ from datetime import datetime
 from .browser import fetch_listings
 from .models import AppConfig, Listing, QuietHoursConfig, SearchConfig, StatusUpdate
 from .notifier import Notifier
-from .parser import matches_search
+from .parser import listing_relevance_score, matches_search
 from .storage import ListingStore
 
 
@@ -43,38 +43,50 @@ def _price_distance(listing: Listing, search: SearchConfig) -> int:
     return 0
 
 
+def _price_compliance(listing: Listing, search: SearchConfig) -> float:
+    if listing.price_cents is None:
+        return 0.0
+    distance = _price_distance(listing, search)
+    if distance == 0:
+        return 1.0
+    reference = max(
+        search.min_price_cents or 0,
+        search.max_price_cents or 0,
+        listing.price_cents,
+        1,
+    )
+    return max(0.0, 1.0 - distance / reference)
+
+
+def _candidate_score(listing: Listing, search: SearchConfig) -> float:
+    title = listing.title.casefold()
+    exclusion_penalty = float(any(term in title for term in search.exclude))
+    return (
+        0.90 * listing_relevance_score(listing, search)
+        + 0.10 * _price_compliance(listing, search)
+        - exclusion_penalty
+    )
+
+
 def _best_status_listing(
     listings: list[Listing],
     matched: list[Listing],
     searches: dict[str, SearchConfig],
 ) -> tuple[Listing | None, bool]:
-    if matched:
-        best = min(
-            matched,
-            key=lambda item: (
-                item.price_cents is None,
-                item.price_cents if item.price_cents is not None else 0,
-                item.title.casefold(),
-            ),
-        )
-        return best, True
-    if not listings:
+    candidates = matched or listings
+    if not candidates:
         return None, False
 
-    def near_match_key(item: Listing) -> tuple[int, int, int, int, str]:
+    def candidate_key(item: Listing) -> tuple[float, float, int, str]:
         search = searches[item.search_name]
-        title = item.title.casefold()
-        include_hits = sum(term in title for term in search.include_any)
-        exclude_hits = sum(term in title for term in search.exclude)
         return (
-            -include_hits,
-            exclude_hits,
-            _price_distance(item, search),
-            item.price_cents if item.price_cents is not None else 10**15,
-            title,
+            _candidate_score(item, search),
+            listing_relevance_score(item, search),
+            -(item.price_cents if item.price_cents is not None else 10**15),
+            item.title.casefold(),
         )
 
-    return min(listings, key=near_match_key), False
+    return max(candidates, key=candidate_key), bool(matched)
 
 
 async def run_once(
