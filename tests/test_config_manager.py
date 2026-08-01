@@ -7,6 +7,8 @@ from marketplace_monitor.config_manager import (
     add_searches,
     create_config,
     remove_search,
+    template_text,
+    write_template,
 )
 
 
@@ -70,3 +72,19 @@ def test_create_config_requires_force_to_replace(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="already exists"):
         create_config(path)
     create_config(path, force=True)
+
+
+def test_search_template_can_be_printed_written_and_added(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    search_path = tmp_path / "search.yaml"
+    create_config(config_path)
+    assert "searches: []" in template_text("config")
+    assert "name: Example product" in template_text("search")
+    write_template("search", search_path)
+
+    assert add_searches(config_path, search_path) == ("Example product",)
+    assert load_config(config_path).searches[0].minimum_relevance == 0.20
+
+    with pytest.raises(ConfigError, match="already exists"):
+        write_template("search", search_path)
+    write_template("search", search_path, force=True)
