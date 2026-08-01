@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class Listing:
+    listing_id: str
+    title: str
+    url: str
+    search_name: str
+    price_cents: int | None = None
+    location: str | None = None
+
+
+@dataclass(frozen=True)
+class BrowserConfig:
+    profile_dir: Path = Path("browser-profile")
+    headless: bool = True
+    page_load_timeout_seconds: int = 45
+    scroll_count: int = 2
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    name: str
+    url: str
+    min_price_cents: int | None = None
+    max_price_cents: int | None = None
+    include_any: tuple[str, ...] = field(default_factory=tuple)
+    exclude: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class NtfyConfig:
+    server: str = "https://ntfy.sh"
+    topic: str = ""
+
+
+@dataclass(frozen=True)
+class NotificationConfig:
+    provider: str = "console"
+    ntfy: NtfyConfig = field(default_factory=NtfyConfig)
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    browser: BrowserConfig
+    database_path: Path
+    check_interval_minutes: int
+    notify_on_first_run: bool
+    notifications: NotificationConfig
+    searches: tuple[SearchConfig, ...]
+

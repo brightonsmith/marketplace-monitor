@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Local configuration and secrets
+.env
+config.yaml
+
+# Facebook browser session and runtime data
+browser-profile/
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs and editor files
+*.log
+.idea/
+.vscode/

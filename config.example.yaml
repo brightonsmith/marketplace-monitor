@@ -1,0 +1,37 @@
+# Copy this file to config.yaml. The local config.yaml is intentionally ignored by Git.
+
+browser:
+  profile_dir: browser-profile
+  headless: true
+  page_load_timeout_seconds: 45
+  scroll_count: 2
+
+database_path: data/marketplace.db
+check_interval_minutes: 10
+
+# The first successful check establishes a baseline without notifying for every
+# listing already on the page. Later checks notify only for newly discovered IDs.
+notify_on_first_run: false
+
+notifications:
+  provider: ntfy
+  # Use a long, unguessable topic. Anyone who knows a public ntfy topic name can
+  # subscribe to it. An access token can be supplied through NTFY_ACCESS_TOKEN.
+  ntfy:
+    server: https://ntfy.sh
+    topic: replace-with-a-long-random-topic
+
+searches:
+  - name: Example product
+    # In Marketplace, set location, radius, price, condition, and newest-first,
+    # then paste the resulting search URL here.
+    url: https://www.facebook.com/marketplace/search/?query=example
+    min_price: 100
+    max_price: 500
+    include_any:
+      - example
+      - alternate product name
+    exclude:
+      - wanted
+      - looking for
+
