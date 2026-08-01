@@ -65,6 +65,36 @@ def test_relevance_prioritizes_model_identity_over_generic_product_words() -> No
     assert listing_relevance_score(delonghi, search) < 0.2
 
 
+def test_relevance_requires_distinctive_brand_anchor() -> None:
+    search = SearchConfig(
+        name="Flair 58 Plus",
+        url="https://www.facebook.com/marketplace/search/?query=flair%2058",
+    )
+    flair_signature = Listing(
+        "1",
+        "Flair Signature Espresso Maker",
+        "https://example/1",
+        search.name,
+    )
+    leather_belt = Listing(
+        "2",
+        "Men's Genuine Leather Belt (58)",
+        "https://example/2",
+        search.name,
+    )
+    espresso_tools = Listing(
+        "3",
+        "Normcore Espresso Tools for 58mm Group Heads",
+        "https://example/3",
+        search.name,
+    )
+
+    flair_score = listing_relevance_score(flair_signature, search)
+    assert flair_score > listing_relevance_score(leather_belt, search)
+    assert flair_score > listing_relevance_score(espresso_tools, search)
+    assert listing_relevance_score(leather_belt, search) < 0.1
+
+
 def test_matches_search_terms_and_price() -> None:
     search = SearchConfig(
         name="Flair",
