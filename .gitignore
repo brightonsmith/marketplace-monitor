@@ -8,7 +8,15 @@ htmlcov/
 
 # Local configuration and secrets
 .env
-config.yaml
+
+# Ignore YAML files everywhere
+*.yaml
+
+# Keep repository examples
+!*.example.yaml
+
+# Keep templates packaged with the application
+!src/marketplace_monitor/templates/*.yaml
 
 # Facebook browser session and runtime data
 browser-profile/
