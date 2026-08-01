@@ -40,7 +40,7 @@ async def _run(args: argparse.Namespace) -> None:
         print(
             f"Check complete: {summary.discovered} discovered, "
             f"{summary.matched} matched, {summary.new} new, "
-            f"{summary.notified} notified"
+            f"{summary.notified} notified, {summary.held} held"
         )
         return
     await watch(config, notifier)
