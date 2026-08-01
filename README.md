@@ -119,11 +119,13 @@ highest-scoring candidate
 from the latest check. Ranking is 90% title relevance and 10% price compliance;
 title relevance compares the listing with the search name, Marketplace query, and
 `include_any` terms while weighting model numbers and words such as `plus` more
-heavily than generic product words. The first distinctive brand word in the
-search name acts as an anchor, preventing unrelated products that merely share a
-model number from being presented as the closest candidate. If nothing clears a
-minimum relevance threshold, the status reports that no relevant candidate was
-found.
+heavily than low-information connector words. The first distinctive word in the
+search name acts as an automatically derived brand/product anchor, preventing
+unrelated products that merely share a model number from being presented as the
+closest candidate. This is product-agnostic: for example, `Flair 58 Plus` anchors
+on `flair`, while `Odyssey Spider Putter` anchors on `odyssey`. If nothing clears
+a minimum relevance threshold, the status reports that no relevant candidate
+was found.
 The timer resets after either a listing alert or a status message is successfully
 sent. Configure or disable it in `config.yaml`:
 
