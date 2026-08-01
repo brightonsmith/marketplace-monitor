@@ -16,18 +16,40 @@ from .config import (
 )
 from .storage import ListingStore
 
+TEMPLATE_FILES = {
+    "config": "config.yaml",
+    "search": "search.yaml",
+}
 
-def create_config(path: str | Path, *, force: bool = False) -> Path:
-    destination = Path(path)
-    if destination.exists() and not force:
-        raise ConfigError(f"Configuration already exists: {destination}")
-    template = (
+
+def template_text(kind: str) -> str:
+    try:
+        template_name = TEMPLATE_FILES[kind]
+    except KeyError as error:
+        raise ConfigError(f"Unknown template type: {kind}") from error
+    return (
         resources.files("marketplace_monitor")
-        .joinpath("templates/config.yaml")
+        .joinpath(f"templates/{template_name}")
         .read_text(encoding="utf-8")
     )
+
+
+def write_template(
+    kind: str,
+    path: str | Path,
+    *,
+    force: bool = False,
+) -> Path:
+    destination = Path(path)
+    if destination.exists() and not force:
+        raise ConfigError(f"File already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(template, encoding="utf-8")
+    destination.write_text(template_text(kind), encoding="utf-8")
+    return destination
+
+
+def create_config(path: str | Path, *, force: bool = False) -> Path:
+    destination = write_template("config", path, force=force)
     load_config(destination)
     return destination
 
