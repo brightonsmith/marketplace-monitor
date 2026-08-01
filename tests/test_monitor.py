@@ -207,6 +207,46 @@ def test_status_prioritizes_relevance_over_a_cheaper_unrelated_listing(
     assert summary.status.listing == current[1]
 
 
+def test_status_omits_unrelated_candidate_when_relevance_is_too_low(
+    tmp_path: Path, monkeypatch
+) -> None:
+    current = [
+        Listing(
+            "1",
+            "Men's Genuine Leather Belt (58)",
+            "https://example.com/1",
+            "Flair 58 Plus",
+            11_000,
+        )
+    ]
+
+    async def fake_fetch(*_args):
+        return current
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    base = make_config(tmp_path)
+    config = AppConfig(
+        browser=base.browser,
+        database_path=base.database_path,
+        check_interval_minutes=base.check_interval_minutes,
+        notify_on_first_run=base.notify_on_first_run,
+        notifications=base.notifications,
+        searches=(
+            SearchConfig(
+                name="Flair 58 Plus",
+                url="https://www.facebook.com/marketplace/search/?query=flair%2058",
+                max_price_cents=50_000,
+                include_any=("flair 58 plus", "flair 58+"),
+            ),
+        ),
+    )
+
+    summary = asyncio.run(monitor_module.run_once(config, RecordingNotifier()))
+
+    assert summary.matched == 0
+    assert summary.status.listing is None
+
+
 def test_quiet_hours_hold_listing_until_window_ends(tmp_path: Path, monkeypatch) -> None:
     current = [listing("1")]
 
