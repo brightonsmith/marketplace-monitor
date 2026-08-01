@@ -113,8 +113,13 @@ exist when the database is first created.
 The check interval comes from `check_interval_minutes` in `config.yaml`. The computer must remain awake and connected to the internet while the monitor is running.
 
 By default, `watch` also sends a status notification after 60 minutes without any
-notification. If a listing passes all filters, the status shows the lowest-priced
-match. Otherwise it shows the closest title/price candidate from the latest check.
+notification. If listings pass all filters, the status shows the highest-relevance
+match, with lower price breaking close or equal scores. Otherwise it shows the
+highest-scoring candidate
+from the latest check. Ranking is 90% title relevance and 10% price compliance;
+title relevance compares the listing with the search name, Marketplace query, and
+`include_any` terms while weighting model numbers and words such as `plus` more
+heavily than generic product words.
 The timer resets after either a listing alert or a status message is successfully
 sent. Configure or disable it in `config.yaml`:
 
