@@ -247,6 +247,38 @@ def test_status_omits_unrelated_candidate_when_relevance_is_too_low(
     assert summary.status.listing is None
 
 
+def test_status_uses_each_search_minimum_relevance(monkeypatch) -> None:
+    candidate = Listing(
+        "1",
+        "Related but inexact product",
+        "https://example.com/1",
+        "Example",
+        25_000,
+    )
+    monkeypatch.setattr(
+        monitor_module,
+        "listing_relevance_scores",
+        lambda _listings, _search: {candidate.listing_id: 0.19},
+    )
+
+    strict = SearchConfig(
+        name="Example",
+        url="https://www.facebook.com/marketplace/search/?query=example",
+    )
+    permissive = SearchConfig(
+        name="Example",
+        url="https://www.facebook.com/marketplace/search/?query=example",
+        minimum_relevance=0.15,
+    )
+
+    assert monitor_module._best_status_listing(
+        [candidate], [], {strict.name: strict}
+    ) == (None, False)
+    assert monitor_module._best_status_listing(
+        [candidate], [], {permissive.name: permissive}
+    ) == (candidate, False)
+
+
 def test_quiet_hours_hold_listing_until_window_ends(tmp_path: Path, monkeypatch) -> None:
     current = [listing("1")]
 
