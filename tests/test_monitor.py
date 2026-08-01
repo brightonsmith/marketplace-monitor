@@ -168,14 +168,14 @@ def test_status_prioritizes_relevance_over_a_cheaper_unrelated_listing(
             "1",
             "DeLonghi Magnifica Coffee Machine",
             "https://example.com/1",
-            "Flair",
+            "Flair 58 Plus",
             10_000,
         ),
         Listing(
             "2",
             "Flair58+ Manual Espresso Maker",
             "https://example.com/2",
-            "Flair",
+            "Flair 58 Plus",
             55_000,
         ),
     ]
