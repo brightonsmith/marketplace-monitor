@@ -24,3 +24,22 @@ def test_management_command_arguments() -> None:
 def test_legacy_command_alias_is_retained() -> None:
     args = build_parser().parse_args(["run-once"])
     assert args.command == "run-once"
+
+
+def test_template_command_accepts_kind_and_output_path() -> None:
+    args = build_parser().parse_args(
+        ["template", "search", "-o", "flair.yaml", "--force"]
+    )
+    assert args.command == "template"
+    assert args.kind == "search"
+    assert args.output == Path("flair.yaml")
+    assert args.force
+
+
+def test_report_command_accepts_limit_and_config() -> None:
+    args = build_parser().parse_args(
+        ["report", "-n", "15", "-c", "active.yaml"]
+    )
+    assert args.command == "report"
+    assert args.limit == 15
+    assert args.config == Path("active.yaml")
