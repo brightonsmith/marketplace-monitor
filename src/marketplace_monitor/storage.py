@@ -119,3 +119,24 @@ class ListingStore:
             (listing_id,),
         ).fetchone()
         return bool(row and row["notified_utc"] is None)
+
+    def pending_listings(self) -> list[Listing]:
+        rows = self.connection.execute(
+            """
+            SELECT listing_id, title, url, search_name, price_cents, location
+            FROM listings
+            WHERE notified_utc IS NULL
+            ORDER BY first_seen_utc
+            """
+        ).fetchall()
+        return [
+            Listing(
+                listing_id=row["listing_id"],
+                title=row["title"],
+                url=row["url"],
+                search_name=row["search_name"],
+                price_cents=row["price_cents"],
+                location=row["location"],
+            )
+            for row in rows
+        ]

@@ -10,6 +10,7 @@ Marketplace Monitor checks saved Facebook Marketplace search pages for new listi
 - Applies additional include, exclude, minimum-price, and maximum-price rules locally.
 - Remembers listing IDs in SQLite so the same listing is not repeatedly announced.
 - Sends push notifications through [ntfy](https://ntfy.sh) or prints matches to the console.
+- Sends an hourly status heartbeat when no listing alerts arrive, including the best current match.
 - Establishes a silent baseline on the first successful run by default.
 
 This is a read-only monitor. It does not message sellers, place orders, or attempt to bypass login challenges.
@@ -104,7 +105,40 @@ The first successful check records the current listings without sending a burst 
 marketplace-monitor watch
 ```
 
+When `notify_on_startup: true` (the default), `watch` sends one concise phone
+summary after its first successful check. This is separate from
+`notify_on_first_run`, which controls individual alerts for listings that already
+exist when the database is first created.
+
 The check interval comes from `check_interval_minutes` in `config.yaml`. The computer must remain awake and connected to the internet while the monitor is running.
+
+By default, `watch` also sends a status notification after 60 minutes without any
+notification. If listings pass all filters, the status shows the highest-relevance
+match, with lower price breaking close or equal scores. Otherwise it shows the
+highest-scoring candidate
+from the latest check. Ranking is 90% title relevance and 10% price compliance;
+title relevance compares the listing with the search name, Marketplace query, and
+`include_any` terms while weighting model numbers and words such as `plus` more
+heavily than generic product words.
+The timer resets after either a listing alert or a status message is successfully
+sent. Configure or disable it in `config.yaml`:
+
+```yaml
+status_interval_minutes: 60  # use 0 to disable
+```
+
+To avoid overnight interruptions, add quiet hours using the computer's local
+time. Both listing alerts and status heartbeats are held during this window.
+Matching listings remain pending in SQLite and are sent on the first check after
+quiet hours end. Overnight ranges are supported:
+
+```yaml
+quiet_hours:
+  start: "22:00"
+  end: "07:00"
+```
+
+Remove `quiet_hours` entirely if you do not want a quiet period.
 
 ## Development checks
 

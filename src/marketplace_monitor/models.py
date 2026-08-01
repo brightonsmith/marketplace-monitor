@@ -15,6 +15,14 @@ class Listing:
 
 
 @dataclass(frozen=True)
+class StatusUpdate:
+    discovered: int
+    matched: int
+    listing: Listing | None
+    is_exact_match: bool
+
+
+@dataclass(frozen=True)
 class BrowserConfig:
     profile_dir: Path = Path("browser-profile")
     headless: bool = True
@@ -45,6 +53,12 @@ class NotificationConfig:
 
 
 @dataclass(frozen=True)
+class QuietHoursConfig:
+    start_minutes: int
+    end_minutes: int
+
+
+@dataclass(frozen=True)
 class AppConfig:
     browser: BrowserConfig
     database_path: Path
@@ -52,4 +66,6 @@ class AppConfig:
     notify_on_first_run: bool
     notifications: NotificationConfig
     searches: tuple[SearchConfig, ...]
-
+    status_interval_minutes: int = 60
+    quiet_hours: QuietHoursConfig | None = None
+    notify_on_startup: bool = True

@@ -9,9 +9,23 @@ browser:
 database_path: data/marketplace.db
 check_interval_minutes: 10
 
+# Send a reassuring status notification after this many minutes without any
+# notification. Set to 0 to disable status messages.
+status_interval_minutes: 60
+
+# Optional local-time window in which all notifications are held. Uncomment and
+# choose your hours; matching listings are delivered after the window ends.
+# quiet_hours:
+#   start: "22:00"
+#   end: "07:00"
+
 # The first successful check establishes a baseline without notifying for every
 # listing already on the page. Later checks notify only for newly discovered IDs.
 notify_on_first_run: false
+
+# Send one concise summary of the current Marketplace landscape whenever the
+# continuous watcher starts. Quiet hours still apply.
+notify_on_startup: true
 
 notifications:
   provider: ntfy
@@ -34,4 +48,3 @@ searches:
     exclude:
       - wanted
       - looking for
-
