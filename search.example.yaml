@@ -1,0 +1,22 @@
+# Edit this file, then activate it with: marketmon add search.yaml
+
+name: Example product
+url: https://www.facebook.com/marketplace/search/?query=example
+
+# Price values are in dollars. Omit either bound if it is not needed.
+min_price: 100
+max_price: 500
+
+# Used only for the closest-match status summary, not exact-match filtering.
+minimum_relevance: 0.20
+
+# A listing is an exact match when its title contains at least one phrase below.
+include_any:
+  - exact product name
+  - alternate spelling
+
+exclude:
+  - wanted
+  - looking for
+  - broken
+  - for parts
