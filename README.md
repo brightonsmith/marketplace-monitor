@@ -115,17 +115,15 @@ The check interval comes from `check_interval_minutes` in `config.yaml`. The com
 By default, `watch` also sends a status notification after 60 minutes without any
 notification. If listings pass all filters, the status shows the highest-relevance
 match, with lower price breaking close or equal scores. Otherwise it shows the
-highest-scoring candidate
-from the latest check. Ranking is 90% title relevance and 10% price compliance;
-title relevance compares the listing with the search name, Marketplace query, and
-`include_any` terms while weighting model numbers and words such as `plus` more
-heavily than low-information connector words. The first distinctive word in the
-search name acts as an automatically derived brand/product anchor, preventing
-unrelated products that merely share a model number from being presented as the
-closest candidate. This is product-agnostic: for example, `Flair 58 Plus` anchors
-on `flair`, while `Odyssey Spider Putter` anchors on `odyssey`. If nothing clears
-a minimum relevance threshold, the status reports that no relevant candidate
-was found.
+highest-scoring candidate from the latest check. Ranking minimizes a weighted
+loss: 90% title distance and 10% price noncompliance. Title similarity combines
+40% word unigram/bigram TF-IDF cosine similarity with 60% character 3–5-gram
+TF-IDF cosine similarity. The query vectors use the search name, Marketplace
+query, and every `include_any` phrase; repeated alias features are deduplicated.
+IDF is calculated from the current fetched listings, so rare, informative terms
+receive more weight without hardcoding any product, brand, or model. If nothing
+clears a minimum relevance threshold, the status reports that no relevant
+candidate was found.
 The timer resets after either a listing alert or a status message is successfully
 sent. Configure or disable it in `config.yaml`:
 
