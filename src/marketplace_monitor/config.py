@@ -10,6 +10,7 @@ from .models import (
     BrowserConfig,
     NotificationConfig,
     NtfyConfig,
+    QuietHoursConfig,
     SearchConfig,
 )
 
@@ -34,6 +35,18 @@ def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ConfigError(f"{field_name} must be a list of strings")
     return tuple(item.strip().casefold() for item in value if item.strip())
+
+
+def _time_to_minutes(value: Any, field_name: str) -> int:
+    if not isinstance(value, str):
+        raise ConfigError(f"{field_name} must use 24-hour HH:MM format")
+    parts = value.strip().split(":")
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        raise ConfigError(f"{field_name} must use 24-hour HH:MM format")
+    hour, minute = (int(part) for part in parts)
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise ConfigError(f"{field_name} must use 24-hour HH:MM format")
+    return hour * 60 + minute
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -112,6 +125,24 @@ def load_config(path: str | Path) -> AppConfig:
     if interval < 1:
         raise ConfigError("check_interval_minutes must be positive")
 
+    status_interval = int(raw.get("status_interval_minutes", 60))
+    if status_interval < 0:
+        raise ConfigError("status_interval_minutes cannot be negative")
+
+    quiet_hours_raw = raw.get("quiet_hours")
+    quiet_hours = None
+    if quiet_hours_raw is not None:
+        if not isinstance(quiet_hours_raw, dict):
+            raise ConfigError("quiet_hours must be a mapping")
+        start_minutes = _time_to_minutes(quiet_hours_raw.get("start"), "quiet_hours.start")
+        end_minutes = _time_to_minutes(quiet_hours_raw.get("end"), "quiet_hours.end")
+        if start_minutes == end_minutes:
+            raise ConfigError("quiet_hours.start and quiet_hours.end must be different")
+        quiet_hours = QuietHoursConfig(
+            start_minutes=start_minutes,
+            end_minutes=end_minutes,
+        )
+
     return AppConfig(
         browser=browser,
         database_path=Path(raw.get("database_path", "data/marketplace.db")),
@@ -119,5 +150,7 @@ def load_config(path: str | Path) -> AppConfig:
         notify_on_first_run=bool(raw.get("notify_on_first_run", False)),
         notifications=NotificationConfig(provider=provider, ntfy=ntfy),
         searches=tuple(searches),
+        status_interval_minutes=status_interval,
+        quiet_hours=quiet_hours,
+        notify_on_startup=bool(raw.get("notify_on_startup", True)),
     )
-
