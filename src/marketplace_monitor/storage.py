@@ -62,6 +62,45 @@ class ListingStore:
         )
         self.connection.commit()
 
+    def prepare_search_baselines(self, search_names: tuple[str, ...]) -> None:
+        """Migrate an existing database to per-search initialization state."""
+        row = self.connection.execute(
+            "SELECT value FROM metadata WHERE key = 'search_baselines_enabled'"
+        ).fetchone()
+        if row and row["value"] == "true":
+            return
+        if self.is_initialized():
+            for search_name in search_names:
+                self._mark_search_initialized(search_name)
+        self.connection.execute(
+            """
+            INSERT INTO metadata (key, value)
+            VALUES ('search_baselines_enabled', 'true')
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """
+        )
+        self.connection.commit()
+
+    def is_search_initialized(self, search_name: str) -> bool:
+        row = self.connection.execute(
+            "SELECT value FROM metadata WHERE key = ?",
+            (f"search_initialized:{search_name.casefold()}",),
+        ).fetchone()
+        return bool(row and row["value"] == "true")
+
+    def _mark_search_initialized(self, search_name: str) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO metadata (key, value) VALUES (?, 'true')
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (f"search_initialized:{search_name.casefold()}",),
+        )
+
+    def mark_search_initialized(self, search_name: str) -> None:
+        self._mark_search_initialized(search_name)
+        self.connection.commit()
+
     def record(self, listing: Listing) -> bool:
         """Record a listing and return True only when its ID is new."""
         now = datetime.now(UTC).isoformat()
@@ -140,3 +179,16 @@ class ListingStore:
             )
             for row in rows
         ]
+
+    def cancel_pending_search(self, search_name: str) -> int:
+        now = datetime.now(UTC).isoformat()
+        cursor = self.connection.execute(
+            """
+            UPDATE listings
+            SET notified_utc = ?
+            WHERE notified_utc IS NULL AND search_name = ? COLLATE NOCASE
+            """,
+            (now, search_name),
+        )
+        self.connection.commit()
+        return cursor.rowcount
