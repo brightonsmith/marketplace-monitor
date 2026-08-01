@@ -21,6 +21,7 @@ def test_ntfy_startup_status_is_concise_and_clickable(monkeypatch) -> None:
     def fake_urlopen(request, timeout):
         captured["payload"] = json.loads(request.data)
         captured["timeout"] = timeout
+        captured["url"] = request.full_url
         return FakeResponse()
 
     monkeypatch.setattr(notifier_module, "urlopen", fake_urlopen)
@@ -44,3 +45,4 @@ def test_ntfy_startup_status_is_concise_and_clickable(monkeypatch) -> None:
         "tags": ["white_check_mark"],
     }
     assert captured["timeout"] == 15
+    assert captured["url"] == "https://ntfy.sh"
