@@ -77,6 +77,14 @@ Facebook remains responsible for distance and condition filtering because those 
 You can edit the main YAML directly, or keep each product in a small transferable
 file:
 
+```powershell
+marketmon template search
+marketmon template search -o flair.yaml
+```
+
+The first command prints the template to the console. The second writes the same
+template to `flair.yaml`. Then edit the generated file:
+
 ```yaml
 name: Flair 58 Plus
 url: https://www.facebook.com/marketplace/denver/search?query=flair%2058
@@ -155,8 +163,11 @@ The check interval comes from `check_interval_minutes` in `config.yaml`. The com
 
 ```text
 marketmon init [-c PATH] [--force]
+marketmon template config [-o PATH] [--force]
+marketmon template search [-o PATH] [--force]
 marketmon login [-c PATH]
 marketmon check [-c PATH]
+marketmon report [-c PATH] [-n COUNT]
 marketmon watch [-c PATH]
 marketmon add SEARCH.yaml [-c PATH] [--replace]
 marketmon list [-c PATH] [--json]
@@ -175,6 +186,16 @@ notifications still pending for it.
 
 `marketmon list --json` provides stable machine-readable output for scripts and
 remote administration.
+
+`marketmon report` performs a fresh check without changing notification history
+and prints the best current listings directly to the console. Each entry includes
+semantic title-match percentage, the combined relevance/price score, exact or
+candidate status, price, title, location, configured search name, and URL:
+
+```powershell
+marketmon report -n 10
+marketmon report -n 5 -c C:\monitor\config.yaml
+```
 
 ## Updating a Raspberry Pi remotely
 
