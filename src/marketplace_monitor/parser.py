@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from difflib import SequenceMatcher
+from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from .models import Listing, SearchConfig
 
 ITEM_ID_PATTERN = re.compile(r"/marketplace/item/(\d+)")
 PRICE_PATTERN = re.compile(r"(?:US\$|\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)", re.IGNORECASE)
+TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+GENERIC_PRODUCT_WORDS = {
+    "coffee",
+    "espresso",
+    "machine",
+    "maker",
+    "manual",
+}
 
 
 def canonicalize_listing_url(url: str) -> str:
@@ -29,6 +38,47 @@ def parse_price_cents(text: str) -> int | None:
     return round(float(match.group(1).replace(",", "")) * 100)
 
 
+def _normalized_words(text: str) -> tuple[str, tuple[str, ...]]:
+    normalized = text.casefold().replace("+", " plus ")
+    normalized = re.sub(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])", " ", normalized)
+    words = tuple(TOKEN_PATTERN.findall(normalized))
+    return " ".join(words), words
+
+
+def _word_weight(word: str) -> float:
+    if word.isdigit() or word == "plus":
+        return 2.5
+    if word in GENERIC_PRODUCT_WORDS:
+        return 0.5
+    return 1.0
+
+
+def listing_relevance_score(listing: Listing, search: SearchConfig) -> float:
+    """Return deterministic title relevance in the range 0.0 to 1.0."""
+    title, title_words = _normalized_words(listing.title)
+    if not title:
+        return 0.0
+    title_word_set = set(title_words)
+
+    query = parse_qs(urlsplit(search.url).query).get("query", [])
+    targets = (search.name, *search.include_any, *query)
+    best = 0.0
+    for target_text in targets:
+        target, target_words = _normalized_words(target_text)
+        if not target_words:
+            continue
+        total_weight = sum(_word_weight(word) for word in target_words)
+        matched_weight = sum(
+            _word_weight(word) for word in target_words if word in title_word_set
+        )
+        word_coverage = matched_weight / total_weight
+        string_similarity = SequenceMatcher(None, target, title).ratio()
+        exact_phrase = float(target in title)
+        score = 0.60 * word_coverage + 0.25 * string_similarity + 0.15 * exact_phrase
+        best = max(best, score)
+    return min(best, 1.0)
+
+
 def listing_from_card(card: dict[str, str], search: SearchConfig) -> Listing | None:
     href = card.get("href", "")
     listing_id = listing_id_from_url(href)
@@ -44,7 +94,20 @@ def listing_from_card(card: dict[str, str], search: SearchConfig) -> Listing | N
         None,
     )
     price_cents = parse_price_cents(lines[price_index]) if price_index is not None else None
-    title_index = (price_index + 1) if price_index is not None else 0
+    # Discounted Marketplace cards can contain both the current and original
+    # price on consecutive lines. The title is the first non-price line after
+    # the first displayed price, not necessarily the immediately following line.
+    title_index = next(
+        (
+            index
+            for index in range(
+                (price_index + 1) if price_index is not None else 0,
+                len(lines),
+            )
+            if parse_price_cents(lines[index]) is None
+        ),
+        0,
+    )
     title = lines[title_index] if title_index < len(lines) else lines[0]
     location = lines[title_index + 1] if title_index + 1 < len(lines) else None
 
