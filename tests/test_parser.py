@@ -47,7 +47,7 @@ def test_listing_from_discounted_card_skips_original_price() -> None:
     assert listing.location == "Denver, Colorado"
 
 
-def test_relevance_prioritizes_model_identity_over_generic_product_words() -> None:
+def test_relevance_prioritizes_product_identity_over_unrelated_brand() -> None:
     search = SearchConfig(
         name="Flair 58 Plus",
         url="https://www.facebook.com/marketplace/search/?query=flair%2058%20plus",
@@ -93,6 +93,36 @@ def test_relevance_requires_distinctive_brand_anchor() -> None:
     assert flair_score > listing_relevance_score(leather_belt, search)
     assert flair_score > listing_relevance_score(espresso_tools, search)
     assert listing_relevance_score(leather_belt, search) < 0.1
+
+
+def test_relevance_anchor_is_derived_for_unrelated_product_category() -> None:
+    search = SearchConfig(
+        name="Odyssey Spider Putter",
+        url="https://www.facebook.com/marketplace/search/?query=odyssey%20spider%20putter",
+    )
+    odyssey = Listing(
+        "1",
+        "Odyssey Spider Putter 35 inch",
+        "https://example/1",
+        search.name,
+    )
+    wrong_brand = Listing(
+        "2",
+        "TaylorMade Spider Putter",
+        "https://example/2",
+        search.name,
+    )
+    unrelated = Listing(
+        "3",
+        "Spider Plant Ceramic Pot",
+        "https://example/3",
+        search.name,
+    )
+
+    odyssey_score = listing_relevance_score(odyssey, search)
+    assert odyssey_score > listing_relevance_score(wrong_brand, search)
+    assert odyssey_score > listing_relevance_score(unrelated, search)
+    assert listing_relevance_score(wrong_brand, search) < 0.1
 
 
 def test_matches_search_terms_and_price() -> None:
