@@ -76,6 +76,23 @@ def listing_relevance_score(listing: Listing, search: SearchConfig) -> float:
         exact_phrase = float(target in title)
         score = 0.60 * word_coverage + 0.25 * string_similarity + 0.15 * exact_phrase
         best = max(best, score)
+
+    _, search_name_words = _normalized_words(search.name)
+    anchor_words = tuple(
+        word
+        for word in search_name_words
+        if not word.isdigit()
+        and word != "plus"
+        and word not in GENERIC_PRODUCT_WORDS
+    )[:1]
+    if anchor_words:
+        anchor_coverage = sum(word in title_word_set for word in anchor_words) / len(
+            anchor_words
+        )
+        if anchor_coverage == 0:
+            best *= 0.10
+        else:
+            best = 0.80 * best + 0.20 * anchor_coverage
     return min(best, 1.0)
 
 
