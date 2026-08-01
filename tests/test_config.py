@@ -27,6 +27,7 @@ searches:
     assert search.max_price_cents == 50_000
     assert search.include_any == ("flair", "espresso")
     assert search.exclude == ("wanted",)
+    assert search.minimum_relevance == 0.20
     assert config.status_interval_minutes == 60
     assert config.notify_on_startup
 
@@ -44,6 +45,38 @@ searches:
         encoding="utf-8",
     )
     with pytest.raises(ConfigError, match="cannot exceed"):
+        load_config(path)
+
+
+def test_load_config_accepts_custom_minimum_relevance(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+searches:
+  - name: Example
+    url: https://www.facebook.com/marketplace/search/?query=example
+    minimum_relevance: 0.35
+""",
+        encoding="utf-8",
+    )
+    assert load_config(path).searches[0].minimum_relevance == 0.35
+
+
+@pytest.mark.parametrize("value", [-0.01, 1.01, "high", True])
+def test_load_config_rejects_invalid_minimum_relevance(
+    tmp_path: Path, value: object
+) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"""
+searches:
+  - name: Example
+    url: https://www.facebook.com/marketplace/search/?query=example
+    minimum_relevance: {str(value).lower()}
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="minimum_relevance"):
         load_config(path)
 
 
