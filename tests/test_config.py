@@ -32,6 +32,42 @@ searches:
     assert config.notify_on_startup
 
 
+def test_load_config_accepts_no_active_searches_and_resolves_local_paths(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "settings" / "config.yaml"
+    path.parent.mkdir()
+    path.write_text(
+        """
+browser:
+  profile_dir: profile
+database_path: state/listings.db
+searches: []
+""",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+    assert config.searches == ()
+    assert config.browser.profile_dir == path.parent / "profile"
+    assert config.database_path == path.parent / "state/listings.db"
+
+
+def test_load_config_rejects_duplicate_search_names(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+searches:
+  - name: Espresso
+    url: https://www.facebook.com/marketplace/search/?query=espresso
+  - name: espresso
+    url: https://www.facebook.com/marketplace/search/?query=coffee
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="duplicates"):
+        load_config(path)
+
+
 def test_load_config_rejects_reversed_price_range(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     path.write_text(

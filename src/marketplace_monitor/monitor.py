@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
 from .browser import fetch_listings
 from .models import AppConfig, Listing, QuietHoursConfig, SearchConfig, StatusUpdate
 from .notifier import Notifier
-from .parser import listing_relevance_score, listing_relevance_scores, matches_search
+from .parser import matches_search
+from .ranking import rank_listings
 from .storage import ListingStore
 
 
@@ -33,41 +35,6 @@ def quiet_hours_active(quiet_hours: QuietHoursConfig | None, at: datetime) -> bo
     return current >= start or current < end
 
 
-def _price_distance(listing: Listing, search: SearchConfig) -> int:
-    if listing.price_cents is None:
-        return 10**15
-    if search.min_price_cents is not None and listing.price_cents < search.min_price_cents:
-        return search.min_price_cents - listing.price_cents
-    if search.max_price_cents is not None and listing.price_cents > search.max_price_cents:
-        return listing.price_cents - search.max_price_cents
-    return 0
-
-
-def _price_compliance(listing: Listing, search: SearchConfig) -> float:
-    if listing.price_cents is None:
-        return 0.0
-    distance = _price_distance(listing, search)
-    if distance == 0:
-        return 1.0
-    reference = max(
-        search.min_price_cents or 0,
-        search.max_price_cents or 0,
-        listing.price_cents,
-        1,
-    )
-    return max(0.0, 1.0 - distance / reference)
-
-
-def _candidate_score(listing: Listing, search: SearchConfig) -> float:
-    title = listing.title.casefold()
-    exclusion_penalty = float(any(term in title for term in search.exclude))
-    return (
-        0.90 * listing_relevance_score(listing, search)
-        + 0.10 * _price_compliance(listing, search)
-        - exclusion_penalty
-    )
-
-
 def _best_status_listing(
     listings: list[Listing],
     matched: list[Listing],
@@ -77,42 +44,11 @@ def _best_status_listing(
     if not candidates:
         return None, False
 
-    corpora = {
-        search_name: [
-            item for item in candidates if item.search_name == search_name
-        ]
-        for search_name in searches
-    }
-    relevance_scores = {
-        listing_id: score
-        for search_name, corpus in corpora.items()
-        for listing_id, score in listing_relevance_scores(
-            corpus,
-            searches[search_name],
-        ).items()
-    }
-
-    def candidate_key(item: Listing) -> tuple[float, float, int, str]:
-        search = searches[item.search_name]
-        relevance = relevance_scores[item.listing_id]
-        title = item.title.casefold()
-        exclusion_penalty = float(any(term in title for term in search.exclude))
-        total_score = (
-            0.90 * relevance
-            + 0.10 * _price_compliance(item, search)
-            - exclusion_penalty
-        )
-        return (
-            total_score,
-            relevance,
-            -(item.price_cents if item.price_cents is not None else 10**15),
-            item.title.casefold(),
-        )
-
-    best = max(candidates, key=candidate_key)
+    best_candidate = rank_listings(candidates, searches)[0]
+    best = best_candidate.listing
     if not matched:
         search = searches[best.search_name]
-        if relevance_scores[best.listing_id] < search.minimum_relevance:
+        if best_candidate.relevance < search.minimum_relevance:
             return None, False
     return best, bool(matched)
 
@@ -124,7 +60,11 @@ async def run_once(
     now: datetime | None = None,
 ) -> RunSummary:
     quiet = quiet_hours_active(config.quiet_hours, now or datetime.now())
-    listings = await fetch_listings(config.browser, config.searches)
+    listings = (
+        await fetch_listings(config.browser, config.searches)
+        if config.searches
+        else []
+    )
     searches = {search.name: search for search in config.searches}
     matched: list[Listing] = [
         listing
@@ -137,12 +77,19 @@ async def run_once(
     notified_count = 0
     held_count = 0
     with ListingStore(config.database_path) as store:
-        baseline = not store.is_initialized() and not config.notify_on_first_run
+        search_names = tuple(search.name for search in config.searches)
+        store.prepare_search_baselines(search_names)
+        baseline_searches = {
+            search.name
+            for search in config.searches
+            if not store.is_search_initialized(search.name)
+            and not config.notify_on_first_run
+        }
         for listing in matched:
             is_new = store.record(listing)
             if is_new:
                 new_count += 1
-            if baseline:
+            if listing.search_name in baseline_searches:
                 store.mark_notified(listing.listing_id)
                 continue
             if not store.needs_notification(listing.listing_id):
@@ -159,6 +106,8 @@ async def run_once(
                 notifier.send(listing)
                 store.mark_notified(listing.listing_id)
                 notified_count += 1
+        for search_name in search_names:
+            store.mark_search_initialized(search_name)
         store.mark_initialized()
 
     return RunSummary(
@@ -214,11 +163,18 @@ def maybe_send_startup_status(
     return False
 
 
-async def watch(config: AppConfig, notifier: Notifier) -> None:
+async def watch(
+    config: AppConfig,
+    notifier: Notifier,
+    *,
+    config_loader: Callable[[], AppConfig] | None = None,
+) -> None:
     last_notification_at = time.monotonic()
     startup_status_pending = config.notify_on_startup
     while True:
         try:
+            if config_loader is not None:
+                config = config_loader()
             wall_time = datetime.now()
             summary = await run_once(config, notifier, now=wall_time)
             check_completed_at = time.monotonic()

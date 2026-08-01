@@ -2,10 +2,11 @@
 
 Marketplace Monitor checks saved Facebook Marketplace search pages for new listing IDs, applies local title and price rules, and sends a phone notification containing the listing link. It keeps the Facebook session and listing history on your computer.
 
-## What the first version does
+## What it does
 
 - Reuses a Facebook login stored in a local Playwright browser profile.
 - Supports multiple Marketplace search URLs.
+- Adds, replaces, lists, and removes searches without stopping a running watcher.
 - Uses the location, radius, condition, sort order, and category already encoded in each Marketplace URL.
 - Applies additional include, exclude, minimum-price, and maximum-price rules locally.
 - Remembers listing IDs in SQLite so the same listing is not repeatedly announced.
@@ -23,7 +24,7 @@ Open Anaconda Prompt or a PowerShell terminal with Conda initialized, then run:
 conda env create -f environment.yml
 conda activate marketplace-monitor
 playwright install chromium
-Copy-Item config.example.yaml config.yaml
+marketmon init
 ```
 
 The environment installs the project in editable mode, so local source changes are immediately available without reinstalling the package. To update an existing environment after dependency changes, run:
@@ -33,9 +34,20 @@ conda env update -f environment.yml --prune
 conda activate marketplace-monitor
 ```
 
+The project is also a standard Python package:
+
+```powershell
+python -m pip install .
+playwright install chromium
+marketmon init
+```
+
+`marketmon` is the primary command. The original `marketplace-monitor` command
+remains available as a compatibility alias.
+
 ## Configure searches
 
-For each product:
+Each configuration can contain any number of searches. For each product:
 
 1. Open Facebook Marketplace normally.
 2. Search for the product.
@@ -62,6 +74,40 @@ searches:
 
 Facebook remains responsible for distance and condition filtering because those values are more reliable in the Marketplace search controls than in listing-card text.
 
+You can edit the main YAML directly, or keep each product in a small transferable
+file:
+
+```powershell
+marketmon template search
+marketmon template search -o flair.yaml
+```
+
+The first command prints the template to the console. The second writes the same
+template to `flair.yaml`. Then edit the generated file:
+
+```yaml
+name: Flair 58 Plus
+url: https://www.facebook.com/marketplace/denver/search?query=flair%2058
+max_price: 500
+minimum_relevance: 0.20
+include_any:
+  - flair 58 plus
+  - flair 58+
+exclude:
+  - wanted
+  - broken
+```
+
+Activate it with:
+
+```powershell
+marketmon add flair.yaml
+```
+
+The `add` command also accepts a complete configuration containing multiple
+entries under `searches`. Search names are unique and case-insensitive. Use
+`--replace` to update an existing search with the same name.
+
 ## Configure phone notifications
 
 Install the ntfy mobile app, choose a long random topic name, and subscribe to it. Put the same topic in `config.yaml`:
@@ -87,7 +133,7 @@ Use `provider: console` while testing if phone notifications are not configured 
 Run:
 
 ```powershell
-marketplace-monitor login
+marketmon login
 ```
 
 A browser window opens. Log in manually, complete any two-factor prompt, wait until Marketplace is visible, and then press Enter in PowerShell. Credentials are not placed in the configuration file. The resulting `browser-profile` directory is local and ignored by Git.
@@ -97,13 +143,13 @@ A browser window opens. Log in manually, complete any two-factor prompt, wait un
 Test one check:
 
 ```powershell
-marketplace-monitor run-once
+marketmon check
 ```
 
 The first successful check records the current listings without sending a burst of old results. Start continuous monitoring with:
 
 ```powershell
-marketplace-monitor watch
+marketmon watch
 ```
 
 When `notify_on_startup: true` (the default), `watch` sends one concise phone
@@ -112,6 +158,68 @@ summary after its first successful check. This is separate from
 exist when the database is first created.
 
 The check interval comes from `check_interval_minutes` in `config.yaml`. The computer must remain awake and connected to the internet while the monitor is running.
+
+## CLI reference
+
+```text
+marketmon init [-c PATH] [--force]
+marketmon template config [-o PATH] [--force]
+marketmon template search [-o PATH] [--force]
+marketmon login [-c PATH]
+marketmon check [-c PATH]
+marketmon report [-c PATH] [-n COUNT] [-s "SEARCH NAME"]
+marketmon watch [-c PATH]
+marketmon add SEARCH.yaml [-c PATH] [--replace]
+marketmon list [-c PATH] [--json]
+marketmon remove "SEARCH NAME" [-c PATH]
+```
+
+`-c` and `--config` may appear before or after the subcommand. Relative browser
+profile and database paths are resolved from the selected configuration file,
+not from the shell's current directory.
+
+The watcher reloads the configuration before every check. A search added by
+another terminal becomes active on the next interval without restarting the
+process. Each newly added search establishes its own silent baseline when
+`notify_on_first_run` is false. Removing a search also cancels any quiet-hours
+notifications still pending for it.
+
+`marketmon list --json` provides stable machine-readable output for scripts and
+remote administration.
+
+`marketmon report` performs a fresh check without changing notification history
+and prints the best current listings directly to the console. Each entry includes
+semantic title-match percentage, the combined relevance/price score, exact or
+candidate status, price, title, location, configured search name, and URL:
+
+```powershell
+marketmon report -n 10
+marketmon report -n 5 -c C:\monitor\config.yaml
+marketmon report -s "Flair 58 Plus" -n 10
+marketmon report -s "Flair 58 Plus" -s "Spider Putter" -n 10
+```
+
+Reports include all active searches by default. `-s/--search` selects an exact
+search name case-insensitively and may be repeated to report on several products.
+
+## Updating a Raspberry Pi remotely
+
+A long-running Pi service can use an explicit managed configuration:
+
+```bash
+marketmon watch -c /home/pi/.config/marketmon/config.yaml
+```
+
+From Windows, transfer a new product definition and activate it over SSH:
+
+```powershell
+scp .\flair.yaml pi@10.0.0.61:/tmp/flair.yaml
+ssh pi@10.0.0.61 "marketmon add /tmp/flair.yaml -c /home/pi/.config/marketmon/config.yaml"
+ssh pi@10.0.0.61 "marketmon list -c /home/pi/.config/marketmon/config.yaml"
+```
+
+No service restart is needed. Ten searches are supported; they are loaded in one
+browser session and checked sequentially during each interval.
 
 By default, `watch` also sends a status notification after 60 minutes without any
 notification. If listings pass all filters, the status shows the highest-relevance

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import marketplace_monitor.monitor as monitor_module
+import marketplace_monitor.ranking as ranking_module
 from marketplace_monitor.models import (
     AppConfig,
     BrowserConfig,
@@ -88,6 +89,51 @@ def test_baseline_then_notify_and_retry_failed_delivery(tmp_path: Path, monkeypa
     assert retry.new == 0
     assert retry.notified == 1
     assert notifier.sent == ["2", "3"]
+
+
+def test_newly_added_search_establishes_its_own_baseline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    current = [listing("1")]
+
+    async def fake_fetch(*_args):
+        return current
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    base = make_config(tmp_path)
+    notifier = RecordingNotifier()
+    asyncio.run(monitor_module.run_once(base, notifier))
+
+    current[:] = [
+        Listing("2", "Spider Putter", "https://example.com/2", "Spider", 20_000)
+    ]
+    expanded = AppConfig(
+        browser=base.browser,
+        database_path=base.database_path,
+        check_interval_minutes=base.check_interval_minutes,
+        notify_on_first_run=False,
+        notifications=base.notifications,
+        searches=(
+            *base.searches,
+            SearchConfig(
+                name="Spider",
+                url="https://www.facebook.com/marketplace/search/?query=spider",
+                include_any=("spider",),
+            ),
+        ),
+    )
+
+    added = asyncio.run(monitor_module.run_once(expanded, notifier))
+    assert added.new == 1
+    assert added.notified == 0
+    assert notifier.sent == []
+
+    current.append(
+        Listing("3", "Spider Putter", "https://example.com/3", "Spider", 19_000)
+    )
+    subsequent = asyncio.run(monitor_module.run_once(expanded, notifier))
+    assert subsequent.notified == 1
+    assert notifier.sent == ["3"]
 
 
 def test_status_is_sent_after_quiet_interval_and_resets_timer(tmp_path: Path, monkeypatch) -> None:
@@ -256,7 +302,7 @@ def test_status_uses_each_search_minimum_relevance(monkeypatch) -> None:
         25_000,
     )
     monkeypatch.setattr(
-        monitor_module,
+        ranking_module,
         "listing_relevance_scores",
         lambda _listings, _search: {candidate.listing_id: 0.19},
     )
@@ -384,3 +430,25 @@ def test_startup_status_sends_summary_and_waits_for_quiet_hours(tmp_path: Path) 
     )
     assert not pending
     assert notifier.statuses == [(status, True)]
+
+
+def test_run_once_with_no_active_searches_does_not_open_browser(
+    tmp_path: Path, monkeypatch
+) -> None:
+    async def fail_fetch(*_args):
+        raise AssertionError("browser should not open")
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fail_fetch)
+    base = make_config(tmp_path)
+    config = AppConfig(
+        browser=base.browser,
+        database_path=base.database_path,
+        check_interval_minutes=base.check_interval_minutes,
+        notify_on_first_run=base.notify_on_first_run,
+        notifications=base.notifications,
+        searches=(),
+    )
+
+    summary = asyncio.run(monitor_module.run_once(config, RecordingNotifier()))
+    assert summary.discovered == 0
+    assert summary.matched == 0

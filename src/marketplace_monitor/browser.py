@@ -63,6 +63,8 @@ async def _extract_cards(page: Page) -> list[dict[str, str]]:
 
 
 async def fetch_listings(config: BrowserConfig, searches: tuple[SearchConfig, ...]) -> list[Listing]:
+    if not searches:
+        return []
     playwright, context = await _open_context(config)
     listings: dict[str, Listing] = {}
     try:

@@ -8,6 +8,7 @@ htmlcov/
 
 # Local configuration and secrets
 .env
+
 # Ignore YAML files everywhere
 *.yaml
 
