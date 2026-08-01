@@ -9,8 +9,8 @@ from datetime import datetime
 from .browser import fetch_listings
 from .models import AppConfig, Listing, QuietHoursConfig, SearchConfig, StatusUpdate
 from .notifier import Notifier
-from .parser import listing_relevance_score, matches_search
-from .ranking import price_compliance, rank_listings
+from .parser import matches_search
+from .ranking import rank_listings
 from .storage import ListingStore
 
 
@@ -33,16 +33,6 @@ def quiet_hours_active(quiet_hours: QuietHoursConfig | None, at: datetime) -> bo
     if start < end:
         return start <= current < end
     return current >= start or current < end
-
-
-def _candidate_score(listing: Listing, search: SearchConfig) -> float:
-    title = listing.title.casefold()
-    exclusion_penalty = float(any(term in title for term in search.exclude))
-    return (
-        0.90 * listing_relevance_score(listing, search)
-        + 0.10 * price_compliance(listing, search)
-        - exclusion_penalty
-    )
 
 
 def _best_status_listing(
