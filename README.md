@@ -51,6 +51,7 @@ searches:
     url: https://www.facebook.com/marketplace/search/?query=flair%2058
     min_price: 250
     max_price: 550
+    minimum_relevance: 0.20
     include_any:
       - flair 58
       - flair58
@@ -122,8 +123,10 @@ TF-IDF cosine similarity. The query vectors use the search name, Marketplace
 query, and every `include_any` phrase; repeated alias features are deduplicated.
 IDF is calculated from the current fetched listings, so rare, informative terms
 receive more weight without hardcoding any product, brand, or model. If nothing
-clears a minimum relevance threshold, the status reports that no relevant
-candidate was found.
+clears the search's `minimum_relevance` threshold, the status reports that no
+relevant candidate was found. The default is `0.20`; raise it to suppress weak
+fallback suggestions or lower it to allow broader ones. This threshold affects
+only closest-match status summaries, not listings that pass the normal filters.
 The timer resets after either a listing alert or a status message is successfully
 sent. Configure or disable it in `config.yaml`:
 
