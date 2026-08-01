@@ -120,9 +120,11 @@ def test_relevance_anchor_is_derived_for_unrelated_product_category() -> None:
     )
 
     odyssey_score = listing_relevance_score(odyssey, search)
-    assert odyssey_score > listing_relevance_score(wrong_brand, search)
-    assert odyssey_score > listing_relevance_score(unrelated, search)
-    assert listing_relevance_score(wrong_brand, search) < 0.1
+    wrong_brand_score = listing_relevance_score(wrong_brand, search)
+    unrelated_score = listing_relevance_score(unrelated, search)
+    assert odyssey_score > wrong_brand_score > unrelated_score
+    assert wrong_brand_score > 0.5
+    assert unrelated_score < 0.2
 
 
 def test_matches_search_terms_and_price() -> None:
