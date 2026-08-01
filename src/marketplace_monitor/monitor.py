@@ -9,7 +9,8 @@ from datetime import datetime
 from .browser import fetch_listings
 from .models import AppConfig, Listing, QuietHoursConfig, SearchConfig, StatusUpdate
 from .notifier import Notifier
-from .parser import listing_relevance_score, listing_relevance_scores, matches_search
+from .parser import listing_relevance_score, matches_search
+from .ranking import price_compliance, rank_listings
 from .storage import ListingStore
 
 
@@ -34,37 +35,12 @@ def quiet_hours_active(quiet_hours: QuietHoursConfig | None, at: datetime) -> bo
     return current >= start or current < end
 
 
-def _price_distance(listing: Listing, search: SearchConfig) -> int:
-    if listing.price_cents is None:
-        return 10**15
-    if search.min_price_cents is not None and listing.price_cents < search.min_price_cents:
-        return search.min_price_cents - listing.price_cents
-    if search.max_price_cents is not None and listing.price_cents > search.max_price_cents:
-        return listing.price_cents - search.max_price_cents
-    return 0
-
-
-def _price_compliance(listing: Listing, search: SearchConfig) -> float:
-    if listing.price_cents is None:
-        return 0.0
-    distance = _price_distance(listing, search)
-    if distance == 0:
-        return 1.0
-    reference = max(
-        search.min_price_cents or 0,
-        search.max_price_cents or 0,
-        listing.price_cents,
-        1,
-    )
-    return max(0.0, 1.0 - distance / reference)
-
-
 def _candidate_score(listing: Listing, search: SearchConfig) -> float:
     title = listing.title.casefold()
     exclusion_penalty = float(any(term in title for term in search.exclude))
     return (
         0.90 * listing_relevance_score(listing, search)
-        + 0.10 * _price_compliance(listing, search)
+        + 0.10 * price_compliance(listing, search)
         - exclusion_penalty
     )
 
@@ -78,42 +54,11 @@ def _best_status_listing(
     if not candidates:
         return None, False
 
-    corpora = {
-        search_name: [
-            item for item in candidates if item.search_name == search_name
-        ]
-        for search_name in searches
-    }
-    relevance_scores = {
-        listing_id: score
-        for search_name, corpus in corpora.items()
-        for listing_id, score in listing_relevance_scores(
-            corpus,
-            searches[search_name],
-        ).items()
-    }
-
-    def candidate_key(item: Listing) -> tuple[float, float, int, str]:
-        search = searches[item.search_name]
-        relevance = relevance_scores[item.listing_id]
-        title = item.title.casefold()
-        exclusion_penalty = float(any(term in title for term in search.exclude))
-        total_score = (
-            0.90 * relevance
-            + 0.10 * _price_compliance(item, search)
-            - exclusion_penalty
-        )
-        return (
-            total_score,
-            relevance,
-            -(item.price_cents if item.price_cents is not None else 10**15),
-            item.title.casefold(),
-        )
-
-    best = max(candidates, key=candidate_key)
+    best_candidate = rank_listings(candidates, searches)[0]
+    best = best_candidate.listing
     if not matched:
         search = searches[best.search_name]
-        if relevance_scores[best.listing_id] < search.minimum_relevance:
+        if best_candidate.relevance < search.minimum_relevance:
             return None, False
     return best, bool(matched)
 
