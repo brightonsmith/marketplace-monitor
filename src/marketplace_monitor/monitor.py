@@ -11,8 +11,6 @@ from .notifier import Notifier
 from .parser import listing_relevance_score, listing_relevance_scores, matches_search
 from .storage import ListingStore
 
-MIN_CANDIDATE_RELEVANCE = 0.10
-
 
 @dataclass(frozen=True)
 class RunSummary:
@@ -113,7 +111,8 @@ def _best_status_listing(
 
     best = max(candidates, key=candidate_key)
     if not matched:
-        if relevance_scores[best.listing_id] < MIN_CANDIDATE_RELEVANCE:
+        search = searches[best.search_name]
+        if relevance_scores[best.listing_id] < search.minimum_relevance:
             return None, False
     return best, bool(matched)
 
