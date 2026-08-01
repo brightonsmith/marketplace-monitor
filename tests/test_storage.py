@@ -16,8 +16,10 @@ def test_store_reports_listing_as_new_only_once(tmp_path: Path) -> None:
         assert not store.is_initialized()
         assert store.record(listing)
         assert store.needs_notification(listing.listing_id)
+        assert store.pending_listings() == [listing]
         assert not store.record(listing)
         store.mark_notified(listing.listing_id)
         assert not store.needs_notification(listing.listing_id)
+        assert store.pending_listings() == []
         store.mark_initialized()
         assert store.is_initialized()
