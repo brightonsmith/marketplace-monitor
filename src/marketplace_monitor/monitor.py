@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -124,7 +125,11 @@ async def run_once(
     now: datetime | None = None,
 ) -> RunSummary:
     quiet = quiet_hours_active(config.quiet_hours, now or datetime.now())
-    listings = await fetch_listings(config.browser, config.searches)
+    listings = (
+        await fetch_listings(config.browser, config.searches)
+        if config.searches
+        else []
+    )
     searches = {search.name: search for search in config.searches}
     matched: list[Listing] = [
         listing
@@ -137,12 +142,19 @@ async def run_once(
     notified_count = 0
     held_count = 0
     with ListingStore(config.database_path) as store:
-        baseline = not store.is_initialized() and not config.notify_on_first_run
+        search_names = tuple(search.name for search in config.searches)
+        store.prepare_search_baselines(search_names)
+        baseline_searches = {
+            search.name
+            for search in config.searches
+            if not store.is_search_initialized(search.name)
+            and not config.notify_on_first_run
+        }
         for listing in matched:
             is_new = store.record(listing)
             if is_new:
                 new_count += 1
-            if baseline:
+            if listing.search_name in baseline_searches:
                 store.mark_notified(listing.listing_id)
                 continue
             if not store.needs_notification(listing.listing_id):
@@ -159,6 +171,8 @@ async def run_once(
                 notifier.send(listing)
                 store.mark_notified(listing.listing_id)
                 notified_count += 1
+        for search_name in search_names:
+            store.mark_search_initialized(search_name)
         store.mark_initialized()
 
     return RunSummary(
@@ -214,11 +228,18 @@ def maybe_send_startup_status(
     return False
 
 
-async def watch(config: AppConfig, notifier: Notifier) -> None:
+async def watch(
+    config: AppConfig,
+    notifier: Notifier,
+    *,
+    config_loader: Callable[[], AppConfig] | None = None,
+) -> None:
     last_notification_at = time.monotonic()
     startup_status_pending = config.notify_on_startup
     while True:
         try:
+            if config_loader is not None:
+                config = config_loader()
             wall_time = datetime.now()
             summary = await run_once(config, notifier, now=wall_time)
             check_completed_at = time.monotonic()
