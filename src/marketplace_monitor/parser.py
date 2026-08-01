@@ -9,12 +9,16 @@ from .models import Listing, SearchConfig
 ITEM_ID_PATTERN = re.compile(r"/marketplace/item/(\d+)")
 PRICE_PATTERN = re.compile(r"(?:US\$|\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)", re.IGNORECASE)
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
-GENERIC_PRODUCT_WORDS = {
-    "coffee",
-    "espresso",
-    "machine",
-    "maker",
-    "manual",
+LOW_INFORMATION_WORDS = {
+    "a",
+    "an",
+    "and",
+    "for",
+    "of",
+    "or",
+    "the",
+    "used",
+    "with",
 }
 
 
@@ -48,7 +52,7 @@ def _normalized_words(text: str) -> tuple[str, tuple[str, ...]]:
 def _word_weight(word: str) -> float:
     if word.isdigit() or word == "plus":
         return 2.5
-    if word in GENERIC_PRODUCT_WORDS:
+    if word in LOW_INFORMATION_WORDS:
         return 0.5
     return 1.0
 
@@ -83,7 +87,7 @@ def listing_relevance_score(listing: Listing, search: SearchConfig) -> float:
         for word in search_name_words
         if not word.isdigit()
         and word != "plus"
-        and word not in GENERIC_PRODUCT_WORDS
+        and word not in LOW_INFORMATION_WORDS
     )[:1]
     if anchor_words:
         anchor_coverage = sum(word in title_word_set for word in anchor_words) / len(
