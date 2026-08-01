@@ -1,6 +1,7 @@
 from marketplace_monitor.models import Listing, SearchConfig
 from marketplace_monitor.parser import (
     canonicalize_listing_url,
+    listing_relevance_score,
     listing_from_card,
     matches_search,
     parse_price_cents,
@@ -31,6 +32,39 @@ def test_listing_from_card() -> None:
     assert listing.url == "https://www.facebook.com/marketplace/item/123456"
 
 
+def test_listing_from_discounted_card_skips_original_price() -> None:
+    search = SearchConfig(name="Flair", url="https://www.facebook.com/marketplace/search/")
+    listing = listing_from_card(
+        {
+            "href": "https://www.facebook.com/marketplace/item/123456/",
+            "text": "$100\n$200\nDeLonghi Magnifica Coffee Machine\nDenver, Colorado",
+        },
+        search,
+    )
+    assert listing is not None
+    assert listing.price_cents == 10_000
+    assert listing.title == "DeLonghi Magnifica Coffee Machine"
+    assert listing.location == "Denver, Colorado"
+
+
+def test_relevance_prioritizes_model_identity_over_generic_product_words() -> None:
+    search = SearchConfig(
+        name="Flair 58 Plus",
+        url="https://www.facebook.com/marketplace/search/?query=flair%2058%20plus",
+        include_any=("flair 58", "flair58+"),
+    )
+    flair = Listing("1", "Flair58+ Manual Espresso Maker", "https://example/1", "Flair")
+    delonghi = Listing(
+        "2",
+        "DeLonghi Magnifica Coffee Machine",
+        "https://example/2",
+        "Flair",
+    )
+
+    assert listing_relevance_score(flair, search) > 0.85
+    assert listing_relevance_score(delonghi, search) < 0.2
+
+
 def test_matches_search_terms_and_price() -> None:
     search = SearchConfig(
         name="Flair",
@@ -52,4 +86,3 @@ def test_canonicalize_relative_url() -> None:
     assert canonicalize_listing_url("/marketplace/item/123/?ref=browse") == (
         "https://www.facebook.com/marketplace/item/123"
     )
-
