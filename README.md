@@ -14,23 +14,22 @@ Marketplace Monitor checks saved Facebook Marketplace search pages for new listi
 
 This is a read-only monitor. It does not message sellers, place orders, or attempt to bypass login challenges.
 
-## Windows setup
+## Windows setup with Conda
 
-Open PowerShell in the repository and run:
+Open Anaconda Prompt or a PowerShell terminal with Conda initialized, then run:
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e ".[dev]"
+conda env create -f environment.yml
+conda activate marketplace-monitor
 playwright install chromium
 Copy-Item config.example.yaml config.yaml
 ```
 
-If PowerShell blocks virtual-environment activation, run this once in the current terminal:
+The environment installs the project in editable mode, so local source changes are immediately available without reinstalling the package. To update an existing environment after dependency changes, run:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
+conda env update -f environment.yml --prune
+conda activate marketplace-monitor
 ```
 
 ## Configure searches
@@ -124,7 +123,7 @@ The committed `.gitignore` excludes:
 - `.env`
 - `browser-profile/`
 - `data/` and SQLite databases
-- logs and virtual environments
+- logs and local environment directories
 
 Do not override these exclusions for session or credential files. Source code can remain public without exposing the local Facebook session.
 
