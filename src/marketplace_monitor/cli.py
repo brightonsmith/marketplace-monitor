@@ -19,10 +19,27 @@ from .config_manager import (
     write_template,
 )
 from .monitor import run_once, watch
+from .models import SearchConfig
 from .notifier import build_notifier, format_price
 from .report import format_report
 
 DEFAULT_CONFIG = Path("config.yaml")
+
+
+def _select_searches(
+    searches: tuple[SearchConfig, ...],
+    requested: list[str] | None,
+) -> tuple[SearchConfig, ...]:
+    if not requested:
+        return searches
+    by_name = {search.name.casefold(): search for search in searches}
+    unknown = [name for name in requested if name.casefold() not in by_name]
+    if unknown:
+        raise ConfigError(
+            f"Active search not found: {unknown[0]}. Run 'marketmon list' "
+            "to see available names."
+        )
+    return tuple(dict.fromkeys(by_name[name.casefold()] for name in requested))
 
 
 def _config_argument(parser: argparse.ArgumentParser, *, subcommand: bool = False) -> None:
@@ -82,6 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
     _config_argument(report_parser, subcommand=True)
     report_parser.add_argument(
         "-n", "--limit", type=int, default=10, help="number of listings (default: 10)"
+    )
+    report_parser.add_argument(
+        "-s",
+        "--search",
+        action="append",
+        help="active search name; repeat to select multiple (default: all)",
     )
 
     add_parser = subparsers.add_parser(
@@ -165,8 +188,9 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
     if args.command == "report":
         if args.limit < 1:
             raise ConfigError("report limit must be positive")
-        listings = await fetch_listings(config.browser, config.searches)
-        print(format_report(listings, config.searches, limit=args.limit))
+        selected_searches = _select_searches(config.searches, args.search)
+        listings = await fetch_listings(config.browser, selected_searches)
+        print(format_report(listings, selected_searches, limit=args.limit))
         return
     await watch(
         config,
