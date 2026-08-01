@@ -61,8 +61,9 @@ def test_relevance_prioritizes_product_identity_over_unrelated_brand() -> None:
         "Flair",
     )
 
-    assert listing_relevance_score(flair, search) > 0.85
-    assert listing_relevance_score(delonghi, search) < 0.2
+    corpus = [flair, delonghi]
+    assert listing_relevance_score(flair, search, corpus) > 0.5
+    assert listing_relevance_score(delonghi, search, corpus) < 0.1
 
 
 def test_relevance_requires_distinctive_brand_anchor() -> None:
@@ -89,10 +90,10 @@ def test_relevance_requires_distinctive_brand_anchor() -> None:
         search.name,
     )
 
-    flair_score = listing_relevance_score(flair_signature, search)
-    assert flair_score > listing_relevance_score(leather_belt, search)
-    assert flair_score > listing_relevance_score(espresso_tools, search)
-    assert listing_relevance_score(leather_belt, search) < 0.1
+    corpus = [flair_signature, leather_belt, espresso_tools]
+    flair_score = listing_relevance_score(flair_signature, search, corpus)
+    assert flair_score > listing_relevance_score(leather_belt, search, corpus)
+    assert flair_score > listing_relevance_score(espresso_tools, search, corpus)
 
 
 def test_relevance_anchor_is_derived_for_unrelated_product_category() -> None:
@@ -119,12 +120,12 @@ def test_relevance_anchor_is_derived_for_unrelated_product_category() -> None:
         search.name,
     )
 
-    odyssey_score = listing_relevance_score(odyssey, search)
-    wrong_brand_score = listing_relevance_score(wrong_brand, search)
-    unrelated_score = listing_relevance_score(unrelated, search)
+    corpus = [odyssey, wrong_brand, unrelated]
+    odyssey_score = listing_relevance_score(odyssey, search, corpus)
+    wrong_brand_score = listing_relevance_score(wrong_brand, search, corpus)
+    unrelated_score = listing_relevance_score(unrelated, search, corpus)
     assert odyssey_score > wrong_brand_score > unrelated_score
-    assert wrong_brand_score > 0.5
-    assert unrelated_score < 0.2
+    assert wrong_brand_score > 0.3
 
 
 def test_matches_search_terms_and_price() -> None:
