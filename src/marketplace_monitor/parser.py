@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from difflib import SequenceMatcher
+from collections import Counter
+from math import log, sqrt
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from .models import Listing, SearchConfig
@@ -9,13 +10,6 @@ from .models import Listing, SearchConfig
 ITEM_ID_PATTERN = re.compile(r"/marketplace/item/(\d+)")
 PRICE_PATTERN = re.compile(r"(?:US\$|\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)", re.IGNORECASE)
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
-GENERIC_PRODUCT_WORDS = {
-    "coffee",
-    "espresso",
-    "machine",
-    "maker",
-    "manual",
-}
 
 
 def canonicalize_listing_url(url: str) -> str:
@@ -45,38 +39,106 @@ def _normalized_words(text: str) -> tuple[str, tuple[str, ...]]:
     return " ".join(words), words
 
 
-def _word_weight(word: str) -> float:
-    if word.isdigit() or word == "plus":
-        return 2.5
-    if word in GENERIC_PRODUCT_WORDS:
-        return 0.5
-    return 1.0
+def _word_features(text: str) -> tuple[str, ...]:
+    _, words = _normalized_words(text)
+    unigrams = tuple(words)
+    bigrams = tuple(f"{first} {second}" for first, second in zip(words, words[1:]))
+    return unigrams + bigrams
 
 
-def listing_relevance_score(listing: Listing, search: SearchConfig) -> float:
-    """Return deterministic title relevance in the range 0.0 to 1.0."""
-    title, title_words = _normalized_words(listing.title)
-    if not title:
-        return 0.0
-    title_word_set = set(title_words)
+def _character_features(text: str) -> tuple[str, ...]:
+    normalized, _ = _normalized_words(text)
+    bounded = f"^{normalized}$"
+    return tuple(
+        bounded[index : index + width]
+        for width in (3, 4, 5)
+        for index in range(max(0, len(bounded) - width + 1))
+    )
 
-    query = parse_qs(urlsplit(search.url).query).get("query", [])
-    targets = (search.name, *search.include_any, *query)
-    best = 0.0
-    for target_text in targets:
-        target, target_words = _normalized_words(target_text)
-        if not target_words:
-            continue
-        total_weight = sum(_word_weight(word) for word in target_words)
-        matched_weight = sum(
-            _word_weight(word) for word in target_words if word in title_word_set
+
+def _tfidf_cosine_scores(
+    query_features: set[str],
+    documents: dict[str, Counter[str]],
+) -> dict[str, float]:
+    if not query_features:
+        return {listing_id: 0.0 for listing_id in documents}
+
+    document_frequency: Counter[str] = Counter()
+    for features in documents.values():
+        document_frequency.update(features.keys())
+    document_count = len(documents)
+
+    def idf(feature: str) -> float:
+        return log((document_count + 1) / (document_frequency[feature] + 1)) + 1
+
+    query_vector = {feature: idf(feature) for feature in query_features}
+    query_norm = sqrt(sum(weight * weight for weight in query_vector.values()))
+
+    scores: dict[str, float] = {}
+    for listing_id, features in documents.items():
+        document_vector = {
+            feature: (1 + log(count)) * idf(feature)
+            for feature, count in features.items()
+        }
+        document_norm = sqrt(
+            sum(weight * weight for weight in document_vector.values())
         )
-        word_coverage = matched_weight / total_weight
-        string_similarity = SequenceMatcher(None, target, title).ratio()
-        exact_phrase = float(target in title)
-        score = 0.60 * word_coverage + 0.25 * string_similarity + 0.15 * exact_phrase
-        best = max(best, score)
-    return min(best, 1.0)
+        if document_norm == 0:
+            scores[listing_id] = 0.0
+            continue
+        dot_product = sum(
+            query_vector.get(feature, 0.0) * weight
+            for feature, weight in document_vector.items()
+        )
+        scores[listing_id] = dot_product / (query_norm * document_norm)
+    return scores
+
+
+def listing_relevance_scores(
+    listings: list[Listing],
+    search: SearchConfig,
+) -> dict[str, float]:
+    """Return corpus-derived TF-IDF cosine similarity for each listing title."""
+    if not listings:
+        return {}
+
+    query_values = parse_qs(urlsplit(search.url).query).get("query", [])
+    query_texts = (search.name, *search.include_any, *query_values)
+    query_word_features = {
+        feature for text in query_texts for feature in _word_features(text)
+    }
+    query_character_features = {
+        feature for text in query_texts for feature in _character_features(text)
+    }
+    word_documents = {
+        listing.listing_id: Counter(_word_features(listing.title))
+        for listing in listings
+    }
+    character_documents = {
+        listing.listing_id: Counter(_character_features(listing.title))
+        for listing in listings
+    }
+    word_scores = _tfidf_cosine_scores(query_word_features, word_documents)
+    character_scores = _tfidf_cosine_scores(
+        query_character_features,
+        character_documents,
+    )
+    return {
+        listing.listing_id: (
+            0.40 * word_scores[listing.listing_id]
+            + 0.60 * character_scores[listing.listing_id]
+        )
+        for listing in listings
+    }
+
+
+def listing_relevance_score(
+    listing: Listing,
+    search: SearchConfig,
+    corpus: list[Listing] | None = None,
+) -> float:
+    listings = corpus or [listing]
+    return listing_relevance_scores(listings, search).get(listing.listing_id, 0.0)
 
 
 def listing_from_card(card: dict[str, str], search: SearchConfig) -> Listing | None:

@@ -38,6 +38,7 @@ class SearchConfig:
     max_price_cents: int | None = None
     include_any: tuple[str, ...] = field(default_factory=tuple)
     exclude: tuple[str, ...] = field(default_factory=tuple)
+    minimum_relevance: float = 0.20
 
 
 @dataclass(frozen=True)

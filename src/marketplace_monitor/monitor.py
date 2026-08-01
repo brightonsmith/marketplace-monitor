@@ -8,7 +8,7 @@ from datetime import datetime
 from .browser import fetch_listings
 from .models import AppConfig, Listing, QuietHoursConfig, SearchConfig, StatusUpdate
 from .notifier import Notifier
-from .parser import listing_relevance_score, matches_search
+from .parser import listing_relevance_score, listing_relevance_scores, matches_search
 from .storage import ListingStore
 
 
@@ -77,16 +77,44 @@ def _best_status_listing(
     if not candidates:
         return None, False
 
+    corpora = {
+        search_name: [
+            item for item in candidates if item.search_name == search_name
+        ]
+        for search_name in searches
+    }
+    relevance_scores = {
+        listing_id: score
+        for search_name, corpus in corpora.items()
+        for listing_id, score in listing_relevance_scores(
+            corpus,
+            searches[search_name],
+        ).items()
+    }
+
     def candidate_key(item: Listing) -> tuple[float, float, int, str]:
         search = searches[item.search_name]
+        relevance = relevance_scores[item.listing_id]
+        title = item.title.casefold()
+        exclusion_penalty = float(any(term in title for term in search.exclude))
+        total_score = (
+            0.90 * relevance
+            + 0.10 * _price_compliance(item, search)
+            - exclusion_penalty
+        )
         return (
-            _candidate_score(item, search),
-            listing_relevance_score(item, search),
+            total_score,
+            relevance,
             -(item.price_cents if item.price_cents is not None else 10**15),
             item.title.casefold(),
         )
 
-    return max(candidates, key=candidate_key), bool(matched)
+    best = max(candidates, key=candidate_key)
+    if not matched:
+        search = searches[best.search_name]
+        if relevance_scores[best.listing_id] < search.minimum_relevance:
+            return None, False
+    return best, bool(matched)
 
 
 async def run_once(

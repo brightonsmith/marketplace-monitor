@@ -38,6 +38,12 @@ def _status_content(
 ) -> tuple[str, str, str | None]:
     prefix = "Started" if startup else "Still running"
     if status.listing is None:
+        if status.discovered:
+            return (
+                f"{prefix} · no relevant candidates",
+                f"{status.discovered} Marketplace listings checked",
+                None,
+            )
         return (
             f"{prefix} · no listings found",
             f"Latest Marketplace check completed · {status.discovered} checked",

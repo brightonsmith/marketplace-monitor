@@ -47,7 +47,7 @@ def test_listing_from_discounted_card_skips_original_price() -> None:
     assert listing.location == "Denver, Colorado"
 
 
-def test_relevance_prioritizes_model_identity_over_generic_product_words() -> None:
+def test_relevance_prioritizes_product_identity_over_unrelated_brand() -> None:
     search = SearchConfig(
         name="Flair 58 Plus",
         url="https://www.facebook.com/marketplace/search/?query=flair%2058%20plus",
@@ -61,8 +61,71 @@ def test_relevance_prioritizes_model_identity_over_generic_product_words() -> No
         "Flair",
     )
 
-    assert listing_relevance_score(flair, search) > 0.85
-    assert listing_relevance_score(delonghi, search) < 0.2
+    corpus = [flair, delonghi]
+    assert listing_relevance_score(flair, search, corpus) > 0.5
+    assert listing_relevance_score(delonghi, search, corpus) < 0.1
+
+
+def test_relevance_requires_distinctive_brand_anchor() -> None:
+    search = SearchConfig(
+        name="Flair 58 Plus",
+        url="https://www.facebook.com/marketplace/search/?query=flair%2058",
+    )
+    flair_signature = Listing(
+        "1",
+        "Flair Signature Espresso Maker",
+        "https://example/1",
+        search.name,
+    )
+    leather_belt = Listing(
+        "2",
+        "Men's Genuine Leather Belt (58)",
+        "https://example/2",
+        search.name,
+    )
+    espresso_tools = Listing(
+        "3",
+        "Normcore Espresso Tools for 58mm Group Heads",
+        "https://example/3",
+        search.name,
+    )
+
+    corpus = [flair_signature, leather_belt, espresso_tools]
+    flair_score = listing_relevance_score(flair_signature, search, corpus)
+    assert flair_score > listing_relevance_score(leather_belt, search, corpus)
+    assert flair_score > listing_relevance_score(espresso_tools, search, corpus)
+
+
+def test_relevance_anchor_is_derived_for_unrelated_product_category() -> None:
+    search = SearchConfig(
+        name="Odyssey Spider Putter",
+        url="https://www.facebook.com/marketplace/search/?query=odyssey%20spider%20putter",
+    )
+    odyssey = Listing(
+        "1",
+        "Odyssey Spider Putter 35 inch",
+        "https://example/1",
+        search.name,
+    )
+    wrong_brand = Listing(
+        "2",
+        "TaylorMade Spider Putter",
+        "https://example/2",
+        search.name,
+    )
+    unrelated = Listing(
+        "3",
+        "Spider Plant Ceramic Pot",
+        "https://example/3",
+        search.name,
+    )
+
+    corpus = [odyssey, wrong_brand, unrelated]
+    odyssey_score = listing_relevance_score(odyssey, search, corpus)
+    wrong_brand_score = listing_relevance_score(wrong_brand, search, corpus)
+    unrelated_score = listing_relevance_score(unrelated, search, corpus)
+    assert odyssey_score > wrong_brand_score > unrelated_score
+    assert wrong_brand_score > 0.3
 
 
 def test_matches_search_terms_and_price() -> None:

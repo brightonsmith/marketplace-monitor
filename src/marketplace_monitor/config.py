@@ -37,6 +37,15 @@ def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
     return tuple(item.strip().casefold() for item in value if item.strip())
 
 
+def _relevance_threshold(value: Any, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{field_name} must be a number between 0 and 1")
+    threshold = float(value)
+    if not 0 <= threshold <= 1:
+        raise ConfigError(f"{field_name} must be between 0 and 1")
+    return threshold
+
+
 def _time_to_minutes(value: Any, field_name: str) -> int:
     if not isinstance(value, str):
         raise ConfigError(f"{field_name} must use 24-hour HH:MM format")
@@ -102,6 +111,10 @@ def load_config(path: str | Path) -> AppConfig:
                 max_price_cents=max_price,
                 include_any=_string_tuple(item.get("include_any"), f"{prefix}.include_any"),
                 exclude=_string_tuple(item.get("exclude"), f"{prefix}.exclude"),
+                minimum_relevance=_relevance_threshold(
+                    item.get("minimum_relevance", 0.20),
+                    f"{prefix}.minimum_relevance",
+                ),
             )
         )
 

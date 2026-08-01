@@ -51,6 +51,7 @@ searches:
     url: https://www.facebook.com/marketplace/search/?query=flair%2058
     min_price: 250
     max_price: 550
+    minimum_relevance: 0.20
     include_any:
       - flair 58
       - flair58
@@ -115,11 +116,17 @@ The check interval comes from `check_interval_minutes` in `config.yaml`. The com
 By default, `watch` also sends a status notification after 60 minutes without any
 notification. If listings pass all filters, the status shows the highest-relevance
 match, with lower price breaking close or equal scores. Otherwise it shows the
-highest-scoring candidate
-from the latest check. Ranking is 90% title relevance and 10% price compliance;
-title relevance compares the listing with the search name, Marketplace query, and
-`include_any` terms while weighting model numbers and words such as `plus` more
-heavily than generic product words.
+highest-scoring candidate from the latest check. Ranking minimizes a weighted
+loss: 90% title distance and 10% price noncompliance. Title similarity combines
+40% word unigram/bigram TF-IDF cosine similarity with 60% character 3–5-gram
+TF-IDF cosine similarity. The query vectors use the search name, Marketplace
+query, and every `include_any` phrase; repeated alias features are deduplicated.
+IDF is calculated from the current fetched listings, so rare, informative terms
+receive more weight without hardcoding any product, brand, or model. If nothing
+clears the search's `minimum_relevance` threshold, the status reports that no
+relevant candidate was found. The default is `0.20`; raise it to suppress weak
+fallback suggestions or lower it to allow broader ones. This threshold affects
+only closest-match status summaries, not listings that pass the normal filters.
 The timer resets after either a listing alert or a status message is successfully
 sent. Configure or disable it in `config.yaml`:
 
