@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+import marketplace_monitor.cli as cli
 from marketplace_monitor.cli import (
     _interactive_config,
     _interactive_search,
@@ -10,6 +11,16 @@ from marketplace_monitor.cli import (
 )
 from marketplace_monitor.config import ConfigError
 from marketplace_monitor.models import SearchConfig
+
+
+def test_version_uses_published_distribution_name(monkeypatch) -> None:
+    requested = []
+    monkeypatch.setattr(
+        cli, "version", lambda name: requested.append(name) or "0.3.1"
+    )
+
+    assert cli._version() == "0.3.1"
+    assert requested == ["marketmon"]
 
 
 def test_config_flag_works_before_or_after_top_level_command() -> None:
