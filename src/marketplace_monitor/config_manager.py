@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -10,39 +9,12 @@ import yaml
 
 from .config import (
     ConfigError,
+    default_config_document,
     load_config,
     load_config_document,
     parse_config_document,
 )
 from .storage import ListingStore
-
-
-def template_text() -> str:
-    return (
-        resources.files("marketplace_monitor")
-        .joinpath("templates/config.yaml")
-        .read_text(encoding="utf-8")
-    )
-
-
-def default_config_document() -> dict[str, Any]:
-    document = yaml.safe_load(template_text())
-    if not isinstance(document, dict):
-        raise ConfigError("Bundled configuration template is invalid")
-    return document
-
-
-def write_template(
-    path: str | Path,
-    *,
-    force: bool = False,
-) -> Path:
-    destination = Path(path)
-    if destination.exists() and not force:
-        raise ConfigError(f"File already exists: {destination}")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(template_text(), encoding="utf-8")
-    return destination
 
 
 def create_config(
@@ -52,13 +24,11 @@ def create_config(
     document: dict[str, Any] | None = None,
 ) -> Path:
     destination = Path(path)
-    if document is None:
-        destination = write_template(destination, force=force)
-    else:
-        if destination.exists() and not force:
-            raise ConfigError(f"File already exists: {destination}")
-        parse_config_document(document, destination)
-        _write_document(destination, document)
+    if destination.exists() and not force:
+        raise ConfigError(f"File already exists: {destination}")
+    candidate = default_config_document() if document is None else document
+    parse_config_document(candidate, destination)
+    _write_document(destination, candidate)
     load_config(destination)
     return destination
 

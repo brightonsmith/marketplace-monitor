@@ -17,13 +17,17 @@ from .browser import (
     interactive_login,
     verify_session,
 )
-from .config import ConfigError, load_config, parse_config_document
+from .config import (
+    ConfigError,
+    default_config_document,
+    load_config,
+    parse_config_document,
+)
 from .config_manager import (
     active_searches,
     add_search_documents,
     add_searches,
     create_config,
-    default_config_document,
     remove_search,
 )
 from .models import SearchConfig

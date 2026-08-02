@@ -1,8 +1,13 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
-from marketplace_monitor.config import ConfigError, load_config
+from marketplace_monitor.config import (
+    ConfigError,
+    default_config_document,
+    load_config,
+)
 from marketplace_monitor.config_manager import (
     add_search_documents,
     add_searches,
@@ -71,6 +76,13 @@ def test_create_config_requires_force_to_replace(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="already exists"):
         create_config(path)
     create_config(path, force=True)
+
+
+def test_create_config_serializes_python_model_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    create_config(path)
+
+    assert yaml.safe_load(path.read_text(encoding="utf-8")) == default_config_document()
 
 
 def test_create_config_accepts_an_interactively_edited_document(tmp_path: Path) -> None:
