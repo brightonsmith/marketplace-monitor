@@ -26,7 +26,9 @@ def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(args, check=check, text=True)
     except FileNotFoundError as error:
-        raise ServiceError(f"Required service command is unavailable: {args[0]}") from error
+        raise ServiceError(
+            f"Required service command is unavailable: {args[0]}"
+        ) from error
     except subprocess.CalledProcessError as error:
         raise ServiceError(
             f"Service command failed ({error.returncode}): {' '.join(args)}"
@@ -34,7 +36,21 @@ def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
 
 
 def _quote(value: str | Path) -> str:
-    return json.dumps(str(value))
+    # systemd expands percent specifiers even inside quoted ExecStart arguments.
+    return json.dumps(str(value).replace("%", "%%"), ensure_ascii=False)
+
+
+def _unit_path(value: str | Path) -> str:
+    """Escape an absolute path for a scalar systemd directive."""
+    escaped = []
+    for character in str(value):
+        if character == "%":
+            escaped.append("%%")
+        elif character in " \t\n\r\\\"":
+            escaped.append(f"\\x{ord(character):02x}")
+        else:
+            escaped.append(character)
+    return "".join(escaped)
 
 
 def service_path() -> Path:
@@ -43,7 +59,9 @@ def service_path() -> Path:
 
 def unit_text(config_path: str | Path) -> str:
     config = Path(config_path).expanduser().resolve()
-    executable = Path(sys.executable).resolve()
+    # Do not resolve this path: a virtual environment's Python executable is a
+    # symlink to the system interpreter, but its original path selects the venv.
+    executable = Path(sys.executable).absolute()
     environment_file = config.parent / "environment"
     return f"""[Unit]
 Description=Facebook Marketplace Monitor
@@ -51,9 +69,9 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-WorkingDirectory={_quote(config.parent)}
+WorkingDirectory={_unit_path(config.parent)}
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-{_quote(environment_file)}
+EnvironmentFile=-{_unit_path(environment_file)}
 ExecStart={_quote(executable)} -m marketplace_monitor.cli watch -c {_quote(config)}
 Restart=always
 RestartSec=60
@@ -92,7 +110,10 @@ def service_status() -> None:
 
 def service_logs(*, follow: bool = False) -> None:
     _require_systemd()
-    args = ["journalctl", "--user", "-u", SERVICE_NAME, "-n", "100"]
+    # Do not use --user here. It only reads per-user journals and therefore
+    # requires persistent journaling, which Raspberry Pi OS does not enable by
+    # default. --user-unit filters all journals visible to the current user.
+    args = ["journalctl", f"--user-unit={SERVICE_NAME}", "-n", "100"]
     if follow:
         args.append("--follow")
     else:
