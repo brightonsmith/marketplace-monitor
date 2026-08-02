@@ -73,6 +73,25 @@ def test_create_config_requires_force_to_replace(tmp_path: Path) -> None:
     create_config(path, force=True)
 
 
+def test_create_config_accepts_an_interactively_edited_document(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    create_config(
+        path,
+        document={
+            "browser": {},
+            "database_path": "data/marketplace.db",
+            "check_interval_minutes": 5,
+            "status_interval_minutes": 0,
+            "quiet_hours": None,
+            "notify_on_first_run": False,
+            "notify_on_startup": True,
+            "notifications": {"provider": "console", "ntfy": {}},
+            "searches": [],
+        },
+    )
+    assert load_config(path).check_interval_minutes == 5
+
+
 def test_interactive_search_document_can_be_added(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     create_config(config_path)
