@@ -30,6 +30,11 @@ class Notifier(ABC):
     def send_status(self, status: StatusUpdate, *, startup: bool = False) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    def send_error(self, title: str, message: str) -> None:
+        """Send an operational alert that must not be suppressed by quiet hours."""
+        raise NotImplementedError
+
 
 def _status_content(
     status: StatusUpdate,
@@ -79,6 +84,10 @@ class ConsoleNotifier(Notifier):
         if url:
             print(url)
 
+    def send_error(self, title: str, message: str) -> None:
+        print(f"ERROR: {title}")
+        print(message)
+
 
 class NtfyNotifier(Notifier):
     def __init__(self, server: str, topic: str, access_token: str | None = None):
@@ -110,6 +119,17 @@ class NtfyNotifier(Notifier):
         if url:
             payload["click"] = url
         self._send_payload(payload)
+
+    def send_error(self, title: str, message: str) -> None:
+        self._send_payload(
+            {
+                "topic": self.topic,
+                "title": title,
+                "message": message,
+                "priority": 5,
+                "tags": ["warning"],
+            }
+        )
 
     def _send_payload(self, payload: dict[str, object]) -> None:
         headers = {"Content-Type": "application/json; charset=utf-8"}
