@@ -25,6 +25,13 @@ def template_text() -> str:
     )
 
 
+def default_config_document() -> dict[str, Any]:
+    document = yaml.safe_load(template_text())
+    if not isinstance(document, dict):
+        raise ConfigError("Bundled configuration template is invalid")
+    return document
+
+
 def write_template(
     path: str | Path,
     *,
@@ -38,8 +45,20 @@ def write_template(
     return destination
 
 
-def create_config(path: str | Path, *, force: bool = False) -> Path:
-    destination = write_template(path, force=force)
+def create_config(
+    path: str | Path,
+    *,
+    force: bool = False,
+    document: dict[str, Any] | None = None,
+) -> Path:
+    destination = Path(path)
+    if document is None:
+        destination = write_template(destination, force=force)
+    else:
+        if destination.exists() and not force:
+            raise ConfigError(f"File already exists: {destination}")
+        parse_config_document(document, destination)
+        _write_document(destination, document)
     load_config(destination)
     return destination
 
