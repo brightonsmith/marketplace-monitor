@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from marketplace_monitor.cli import _interactive_search, _select_searches, build_parser
+from marketplace_monitor.cli import (
+    _interactive_config,
+    _interactive_search,
+    _select_searches,
+    build_parser,
+)
 from marketplace_monitor.config import ConfigError
 from marketplace_monitor.models import SearchConfig
 
@@ -24,6 +29,14 @@ def test_add_supports_interactive_and_yaml_modes() -> None:
     assert interactive.source is None
     assert imported.source == Path("flair.yaml")
     assert imported.replace
+
+
+def test_init_supports_interactive_and_default_modes() -> None:
+    parser = build_parser()
+    interactive = parser.parse_args(["init", "-c", "active.yaml"])
+    defaults = parser.parse_args(["init", "--defaults"])
+    assert not interactive.defaults
+    assert defaults.defaults
 
 
 def test_check_is_read_only_report_command() -> None:
@@ -71,12 +84,17 @@ def test_removed_redundant_commands_are_not_public() -> None:
 def test_interactive_search_collects_defaults(monkeypatch) -> None:
     answers = iter(
         [
-            "Flair 58 Plus",
-            "https://www.facebook.com/marketplace/search/?query=flair%2058",
-            "200",
+            "4",
             "550",
+            "1",
+            "Flair 58 Plus",
+            "2",
+            "https://www.facebook.com/marketplace/search/?query=flair%2058",
+            "3",
+            "200",
+            "5",
             "flair 58, flair58",
-            "",
+            "s",
         ]
     )
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
@@ -89,15 +107,45 @@ def test_interactive_search_collects_defaults(monkeypatch) -> None:
     assert "broken" in search["exclude"]
 
 
+def test_interactive_config_can_edit_settings_in_any_order(
+    monkeypatch, tmp_path
+) -> None:
+    answers = iter(
+        [
+            "8",
+            "my-private-topic",
+            "6",
+            "ntfy",
+            "1",
+            "5",
+            "3",
+            "22:00-07:00",
+            "s",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    document = _interactive_config(tmp_path / "config.yaml")
+
+    assert document is not None
+    assert document["check_interval_minutes"] == 5
+    assert document["notifications"]["provider"] == "ntfy"
+    assert document["notifications"]["ntfy"]["topic"] == "my-private-topic"
+    assert document["quiet_hours"] == {"start": "22:00", "end": "07:00"}
+
+
 def test_search_selection_is_case_insensitive_and_deduplicated() -> None:
     flair = SearchConfig("Flair 58 Plus", "https://facebook.com/marketplace/flair")
     spider = SearchConfig("Spider Putter", "https://facebook.com/marketplace/spider")
     searches = (flair, spider)
 
     assert _select_searches(searches, None) == searches
-    assert _select_searches(
-        searches,
-        ["flair 58 plus", "FLAIR 58 PLUS", "Spider Putter"],
-    ) == searches
+    assert (
+        _select_searches(
+            searches,
+            ["flair 58 plus", "FLAIR 58 PLUS", "Spider Putter"],
+        )
+        == searches
+    )
     with pytest.raises(ConfigError, match="Active search not found"):
         _select_searches(searches, ["Unknown"])
