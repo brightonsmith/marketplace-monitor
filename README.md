@@ -48,8 +48,12 @@ Create a durable configuration outside a cloned repository:
 
 ```bash
 marketmon init
-vim ~/.config/marketmon/config.yaml
 ```
+
+`init` opens a numbered editor showing all monitoring, notification, browser,
+and storage settings. Select settings in any order, then choose `S` to validate
+and save. Use `Q` to cancel without creating a file. For an unattended install
+that should use every default, run `marketmon init --defaults`.
 
 When no local `config.yaml` exists, Marketmon defaults to
 `~/.config/marketmon/config.yaml`. An existing local config remains supported.
@@ -103,10 +107,11 @@ condition, price, category, and sorting. Copy the complete results URL, then run
 marketmon add
 ```
 
-The command prompts for the name, URL, optional local price bounds, exact title
-phrases, and exclusions. Title matching is case-insensitive. A short distinctive
-phrase such as `flair 58` also matches longer titles such as `Flair 58 Plus
-Espresso Maker`.
+The command opens a numbered editor showing the name, URL, optional local price
+bounds, exact title phrases, exclusions, and relevance threshold. Select fields
+in any order, then choose `S` to validate and save. Title matching is
+case-insensitive. A short distinctive phrase such as `flair 58` also matches
+longer titles such as `Flair 58 Plus Espresso Maker`.
 
 Inspect the active searches and current results:
 
