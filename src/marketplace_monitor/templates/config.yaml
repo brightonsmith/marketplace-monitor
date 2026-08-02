@@ -21,7 +21,7 @@ notifications:
   provider: console
   ntfy:
     server: https://ntfy.sh
-    topic: replace-with-a-long-random-topic
+    topic: ""
 
 # Add a search interactively with: marketmon add -c config.yaml
 searches: []
