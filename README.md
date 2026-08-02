@@ -12,8 +12,8 @@ Facebook login challenges.
 The public CLI has one command for each job:
 
 ```text
-marketmon init                         create the configuration
-marketmon login                        save and verify a Facebook session
+marketmon init                          create the configuration
+marketmon login                         save and verify a Facebook session
 marketmon add [SEARCH.yaml]             add a search interactively or from YAML
 marketmon list                          list active searches
 marketmon remove "SEARCH NAME"          remove a search
