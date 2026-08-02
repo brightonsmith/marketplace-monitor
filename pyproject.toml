@@ -3,8 +3,8 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "marketplace-monitor"
-version = "0.3.0"
+name = "marketmon"
+version = "0.3.1"
 description = "Monitor Facebook Marketplace searches and send notifications for new matching listings."
 readme = "README.md"
 requires-python = ">=3.11"
