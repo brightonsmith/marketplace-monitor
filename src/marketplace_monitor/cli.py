@@ -60,9 +60,9 @@ DEFAULT_CONFIG = _default_config_path()
 
 def _version() -> str:
     try:
-        return version("marketplace-monitor")
+        return version("marketmon")
     except PackageNotFoundError:
-        return "0.3.0"
+        return "unknown"
 
 
 def _select_searches(
