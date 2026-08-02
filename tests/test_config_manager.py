@@ -1,14 +1,18 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
-from marketplace_monitor.config import ConfigError, load_config
+from marketplace_monitor.config import (
+    ConfigError,
+    default_config_document,
+    load_config,
+)
 from marketplace_monitor.config_manager import (
+    add_search_documents,
     add_searches,
     create_config,
     remove_search,
-    template_text,
-    write_template,
 )
 
 
@@ -74,17 +78,42 @@ def test_create_config_requires_force_to_replace(tmp_path: Path) -> None:
     create_config(path, force=True)
 
 
-def test_search_template_can_be_printed_written_and_added(tmp_path: Path) -> None:
+def test_create_config_serializes_python_model_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    create_config(path)
+
+    assert yaml.safe_load(path.read_text(encoding="utf-8")) == default_config_document()
+
+
+def test_create_config_accepts_an_interactively_edited_document(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    create_config(
+        path,
+        document={
+            "browser": {},
+            "database_path": "data/marketplace.db",
+            "check_interval_minutes": 5,
+            "status_interval_minutes": 0,
+            "quiet_hours": None,
+            "notify_on_first_run": False,
+            "notify_on_startup": True,
+            "notifications": {"provider": "console", "ntfy": {}},
+            "searches": [],
+        },
+    )
+    assert load_config(path).check_interval_minutes == 5
+
+
+def test_interactive_search_document_can_be_added(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
-    search_path = tmp_path / "search.yaml"
     create_config(config_path)
-    assert "searches: []" in template_text("config")
-    assert "name: Example product" in template_text("search")
-    write_template("search", search_path)
-
-    assert add_searches(config_path, search_path) == ("Example product",)
+    assert add_search_documents(
+        config_path,
+        [
+            {
+                "name": "Example product",
+                "url": "https://www.facebook.com/marketplace/search/?query=example",
+            }
+        ],
+    ) == ("Example product",)
     assert load_config(config_path).searches[0].minimum_relevance == 0.20
-
-    with pytest.raises(ConfigError, match="already exists"):
-        write_template("search", search_path)
-    write_template("search", search_path, force=True)

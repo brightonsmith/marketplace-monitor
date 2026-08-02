@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -10,46 +9,26 @@ import yaml
 
 from .config import (
     ConfigError,
+    default_config_document,
     load_config,
     load_config_document,
     parse_config_document,
 )
 from .storage import ListingStore
 
-TEMPLATE_FILES = {
-    "config": "config.yaml",
-    "search": "search.yaml",
-}
 
-
-def template_text(kind: str) -> str:
-    try:
-        template_name = TEMPLATE_FILES[kind]
-    except KeyError as error:
-        raise ConfigError(f"Unknown template type: {kind}") from error
-    return (
-        resources.files("marketplace_monitor")
-        .joinpath(f"templates/{template_name}")
-        .read_text(encoding="utf-8")
-    )
-
-
-def write_template(
-    kind: str,
+def create_config(
     path: str | Path,
     *,
     force: bool = False,
+    document: dict[str, Any] | None = None,
 ) -> Path:
     destination = Path(path)
     if destination.exists() and not force:
         raise ConfigError(f"File already exists: {destination}")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(template_text(kind), encoding="utf-8")
-    return destination
-
-
-def create_config(path: str | Path, *, force: bool = False) -> Path:
-    destination = write_template("config", path, force=force)
+    candidate = default_config_document() if document is None else document
+    parse_config_document(candidate, destination)
+    _write_document(destination, candidate)
     load_config(destination)
     return destination
 
@@ -93,6 +72,19 @@ def add_searches(
     *,
     replace: bool = False,
 ) -> tuple[str, ...]:
+    return add_search_documents(
+        config_path,
+        _source_searches(source_path),
+        replace=replace,
+    )
+
+
+def add_search_documents(
+    config_path: str | Path,
+    searches: list[dict[str, Any]],
+    *,
+    replace: bool = False,
+) -> tuple[str, ...]:
     destination = Path(config_path)
     document = load_config_document(destination)
     existing = document.get("searches")
@@ -106,7 +98,7 @@ def add_searches(
         if isinstance(search, dict)
     }
     added: list[str] = []
-    for search in _source_searches(source_path):
+    for search in searches:
         name = search.get("name")
         if not isinstance(name, str) or not name.strip():
             raise ConfigError("Every added search requires a name")

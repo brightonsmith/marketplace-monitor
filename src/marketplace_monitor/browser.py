@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
+from playwright.async_api import (
+    BrowserContext,
+    Page,
+    TimeoutError as PlaywrightTimeoutError,
+    async_playwright,
+)
 
 from .models import BrowserConfig, Listing, SearchConfig
 from .parser import listing_from_card
@@ -29,7 +35,33 @@ class BrowserSessionError(RuntimeError):
     """Raised when the saved Facebook browser session cannot access Marketplace."""
 
 
-async def _open_context(config: BrowserConfig, headless: bool | None = None) -> tuple[object, BrowserContext]:
+LOGIN_PATH_MARKERS = (
+    "/login",
+    "/checkpoint",
+    "/recover",
+    "/two_step_verification",
+)
+
+
+async def _ensure_authenticated(page: Page) -> None:
+    path = urlsplit(page.url).path.casefold()
+    login_controls = page.locator(
+        'input[name="email"], input[name="pass"], form[action*="/login"]'
+    )
+    login_control_visible = bool(await login_controls.count()) and await (
+        login_controls.first.is_visible()
+    )
+    if any(marker in path for marker in LOGIN_PATH_MARKERS) or login_control_visible:
+        raise BrowserSessionError(
+            "The saved Facebook session expired or requires verification. "
+            "Run 'marketmon login' from a graphical desktop to sign in again."
+        )
+
+
+async def _open_context(
+    config: BrowserConfig,
+    headless: bool | None = None,
+) -> tuple[object, BrowserContext]:
     config.profile_dir.mkdir(parents=True, exist_ok=True)
     playwright = await async_playwright().start()
     context = await playwright.chromium.launch_persistent_context(
@@ -47,7 +79,26 @@ async def interactive_login(config: BrowserConfig) -> None:
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto("https://www.facebook.com/marketplace/", wait_until="domcontentloaded")
         print("Log in to Facebook in the browser window.")
-        await asyncio.to_thread(input, "When Marketplace is visible, press Enter here to save the session...")
+        await asyncio.to_thread(
+            input,
+            "When Marketplace is visible, press Enter here to save the session...",
+        )
+        await _ensure_authenticated(page)
+        print("Facebook session saved and verified.")
+    finally:
+        await context.close()
+        await playwright.stop()
+
+
+async def verify_session(config: BrowserConfig) -> None:
+    playwright, context = await _open_context(config)
+    try:
+        page = context.pages[0] if context.pages else await context.new_page()
+        await page.goto(
+            "https://www.facebook.com/marketplace/",
+            wait_until="domcontentloaded",
+        )
+        await _ensure_authenticated(page)
     finally:
         await context.close()
         await playwright.stop()
@@ -62,7 +113,10 @@ async def _extract_cards(page: Page) -> list[dict[str, str]]:
     return await locator.evaluate_all(CARD_SCRIPT)
 
 
-async def fetch_listings(config: BrowserConfig, searches: tuple[SearchConfig, ...]) -> list[Listing]:
+async def fetch_listings(
+    config: BrowserConfig,
+    searches: tuple[SearchConfig, ...],
+) -> list[Listing]:
     if not searches:
         return []
     playwright, context = await _open_context(config)
@@ -71,10 +125,7 @@ async def fetch_listings(config: BrowserConfig, searches: tuple[SearchConfig, ..
         page = context.pages[0] if context.pages else await context.new_page()
         for search in searches:
             await page.goto(search.url, wait_until="domcontentloaded")
-            if "login" in page.url.casefold() or await page.locator('input[name="email"]').count():
-                raise BrowserSessionError(
-                    "Facebook login is required. Run 'marketplace-monitor login' first."
-                )
+            await _ensure_authenticated(page)
             for _ in range(config.scroll_count):
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(1_000)

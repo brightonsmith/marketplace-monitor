@@ -3,6 +3,25 @@ from pathlib import Path
 import pytest
 
 from marketplace_monitor.config import ConfigError, load_config
+from marketplace_monitor.models import AppConfig
+
+
+def test_empty_document_uses_python_model_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text("{}\n", encoding="utf-8")
+
+    config = load_config(path)
+    defaults = AppConfig()
+
+    assert config.browser.profile_dir == tmp_path / defaults.browser.profile_dir
+    assert config.browser.headless == defaults.browser.headless
+    assert config.database_path == tmp_path / defaults.database_path
+    assert config.check_interval_minutes == defaults.check_interval_minutes
+    assert config.status_interval_minutes == defaults.status_interval_minutes
+    assert config.notify_on_first_run == defaults.notify_on_first_run
+    assert config.notify_on_startup == defaults.notify_on_startup
+    assert config.notifications == defaults.notifications
+    assert config.searches == defaults.searches
 
 
 def test_load_config_converts_money_and_terms(tmp_path: Path) -> None:

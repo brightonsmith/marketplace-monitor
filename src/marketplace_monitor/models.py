@@ -61,12 +61,12 @@ class QuietHoursConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    browser: BrowserConfig
-    database_path: Path
-    check_interval_minutes: int
-    notify_on_first_run: bool
-    notifications: NotificationConfig
-    searches: tuple[SearchConfig, ...]
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
+    database_path: Path = Path("data/marketplace.db")
+    check_interval_minutes: int = 10
+    notify_on_first_run: bool = False
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
+    searches: tuple[SearchConfig, ...] = field(default_factory=tuple)
     status_interval_minutes: int = 60
     quiet_hours: QuietHoursConfig | None = None
     notify_on_startup: bool = True

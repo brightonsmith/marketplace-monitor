@@ -6,6 +6,7 @@ import pytest
 
 import marketplace_monitor.monitor as monitor_module
 import marketplace_monitor.ranking as ranking_module
+from marketplace_monitor.browser import BrowserSessionError
 from marketplace_monitor.models import (
     AppConfig,
     BrowserConfig,
@@ -23,6 +24,7 @@ class RecordingNotifier(Notifier):
         self.fail = fail
         self.sent: list[str] = []
         self.statuses: list[tuple[StatusUpdate, bool]] = []
+        self.errors: list[tuple[str, str]] = []
 
     def send(self, listing: Listing) -> None:
         if self.fail:
@@ -33,6 +35,11 @@ class RecordingNotifier(Notifier):
         if self.fail:
             raise RuntimeError("delivery failed")
         self.statuses.append((status, startup))
+
+    def send_error(self, title: str, message: str) -> None:
+        if self.fail:
+            raise RuntimeError("delivery failed")
+        self.errors.append((title, message))
 
 
 def make_config(tmp_path: Path) -> AppConfig:
@@ -396,7 +403,7 @@ def test_status_waits_during_quiet_hours(tmp_path: Path) -> None:
     assert notifier.statuses == []
 
 
-def test_startup_status_sends_summary_and_waits_for_quiet_hours(tmp_path: Path) -> None:
+def test_startup_status_bypasses_quiet_hours(tmp_path: Path) -> None:
     base = make_config(tmp_path)
     config = AppConfig(
         browser=base.browser,
@@ -416,20 +423,35 @@ def test_startup_status_sends_summary_and_waits_for_quiet_hours(tmp_path: Path) 
         notifier,
         summary,
         pending=True,
-        wall_time=datetime(2026, 8, 1, 23, 0),
-    )
-    assert pending
-    assert notifier.statuses == []
-
-    pending = monitor_module.maybe_send_startup_status(
-        config,
-        notifier,
-        summary,
-        pending=pending,
-        wall_time=datetime(2026, 8, 2, 7, 0),
     )
     assert not pending
     assert notifier.statuses == [(status, True)]
+
+
+def test_watch_sends_one_authentication_alert_until_recovery(
+    tmp_path: Path, monkeypatch
+) -> None:
+    async def expired_session(*_args, **_kwargs):
+        raise BrowserSessionError("session expired")
+
+    sleep_count = 0
+
+    async def stop_after_two_cycles(_seconds):
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count == 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(monitor_module, "run_once", expired_session)
+    monkeypatch.setattr(monitor_module.asyncio, "sleep", stop_after_two_cycles)
+    notifier = RecordingNotifier()
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(monitor_module.watch(make_config(tmp_path), notifier))
+
+    assert len(notifier.errors) == 1
+    assert notifier.errors[0][0] == "Marketmon needs Facebook login"
+    assert "Monitoring is paused" in notifier.errors[0][1]
 
 
 def test_run_once_with_no_active_searches_does_not_open_browser(

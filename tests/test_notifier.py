@@ -46,3 +46,24 @@ def test_ntfy_startup_status_is_concise_and_clickable(monkeypatch) -> None:
     }
     assert captured["timeout"] == 15
     assert captured["url"] == "https://ntfy.sh"
+
+
+def test_ntfy_authentication_error_is_high_priority(monkeypatch) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["payload"] = json.loads(request.data)
+        return FakeResponse()
+
+    monkeypatch.setattr(notifier_module, "urlopen", fake_urlopen)
+    notifier = NtfyNotifier("https://ntfy.sh", "example-topic")
+
+    notifier.send_error("Marketmon needs Facebook login", "Sign in again.")
+
+    assert captured["payload"] == {
+        "topic": "example-topic",
+        "title": "Marketmon needs Facebook login",
+        "message": "Sign in again.",
+        "priority": 5,
+        "tags": ["warning"],
+    }

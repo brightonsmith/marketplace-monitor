@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
-from .browser import fetch_listings
+from .browser import BrowserSessionError, fetch_listings
 from .models import AppConfig, Listing, QuietHoursConfig, SearchConfig, StatusUpdate
 from .notifier import Notifier
 from .parser import matches_search
@@ -153,14 +153,18 @@ def maybe_send_startup_status(
     summary: RunSummary,
     *,
     pending: bool,
-    wall_time: datetime,
 ) -> bool:
     if not pending or not config.notify_on_startup:
         return False
-    if quiet_hours_active(config.quiet_hours, wall_time):
-        return True
     notifier.send_status(summary.status, startup=True)
     return False
+
+
+def send_authentication_alert(notifier: Notifier, error: BrowserSessionError) -> None:
+    notifier.send_error(
+        "Marketmon needs Facebook login",
+        f"{error}\nMonitoring is paused until the Facebook session is restored.",
+    )
 
 
 async def watch(
@@ -171,12 +175,14 @@ async def watch(
 ) -> None:
     last_notification_at = time.monotonic()
     startup_status_pending = config.notify_on_startup
+    authentication_alert_sent = False
     while True:
         try:
             if config_loader is not None:
                 config = config_loader()
             wall_time = datetime.now()
             summary = await run_once(config, notifier, now=wall_time)
+            authentication_alert_sent = False
             check_completed_at = time.monotonic()
             was_startup_pending = startup_status_pending
             startup_status_pending = maybe_send_startup_status(
@@ -184,7 +190,6 @@ async def watch(
                 notifier,
                 summary,
                 pending=startup_status_pending,
-                wall_time=wall_time,
             )
             if was_startup_pending and not startup_status_pending:
                 last_notification_at = check_completed_at
@@ -202,6 +207,15 @@ async def watch(
                 f"{summary.matched} matched, {summary.new} new, "
                 f"{summary.notified} notified, {summary.held} held"
             )
+        except BrowserSessionError as error:
+            print(f"Authentication failed: {error}")
+            if not authentication_alert_sent:
+                try:
+                    send_authentication_alert(notifier, error)
+                except Exception as notification_error:
+                    print(f"Authentication alert failed: {notification_error}")
+                else:
+                    authentication_alert_sent = True
         except Exception as error:
             print(f"Check failed: {error}")
         await asyncio.sleep(config.check_interval_minutes * 60)

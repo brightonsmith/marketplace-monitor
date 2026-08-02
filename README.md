@@ -1,116 +1,65 @@
 # Marketplace Monitor
 
-Marketplace Monitor checks saved Facebook Marketplace search pages for new listing IDs, applies local title and price rules, and sends a phone notification containing the listing link. It keeps the Facebook session and listing history on your computer.
+Marketplace Monitor watches saved Facebook Marketplace searches, applies local
+title and price rules, and sends phone notifications for newly listed matches.
+It keeps the Facebook session and listing history on the machine running it.
 
-## What it does
+The monitor is read-only. It does not message sellers, place orders, or bypass
+Facebook login challenges.
 
-- Reuses a Facebook login stored in a local Playwright browser profile.
-- Supports multiple Marketplace search URLs.
-- Adds, replaces, lists, and removes searches without stopping a running watcher.
-- Uses the location, radius, condition, sort order, and category already encoded in each Marketplace URL.
-- Applies additional include, exclude, minimum-price, and maximum-price rules locally.
-- Remembers listing IDs in SQLite so the same listing is not repeatedly announced.
-- Sends push notifications through [ntfy](https://ntfy.sh) or prints matches to the console.
-- Sends an hourly status heartbeat when no listing alerts arrive, including the best current match.
-- Establishes a silent baseline on the first successful run by default.
+## Command model
 
-This is a read-only monitor. It does not message sellers, place orders, or attempt to bypass login challenges.
+The public CLI has one command for each job:
 
-## Windows setup with Conda
+```text
+marketmon init                          create the configuration
+marketmon login                         save and verify a Facebook session
+marketmon add [SEARCH.yaml]             add a search interactively or from YAML
+marketmon list                          list active searches
+marketmon remove "SEARCH NAME"          remove a search
+marketmon check [-n COUNT] [-s NAME]    inspect current results without side effects
+marketmon watch [--once]                run real monitoring cycles
+marketmon service ACTION                manage autonomous Linux operation
+```
 
-Open Anaconda Prompt or a PowerShell terminal with Conda initialized, then run:
+`check` never changes notification history or sends listing alerts. `watch --once`
+performs one real cycle, including baselining, deduplication, quiet hours, and
+eligible notifications. `watch` repeats those cycles continuously.
 
-```powershell
-conda env create -f environment.yml
-conda activate marketplace-monitor
-playwright install chromium
+`-c/--config` may appear before or after a top-level command. Relative browser
+profile and database paths are resolved from the configuration file's directory.
+
+## Raspberry Pi quick start
+
+No repository clone is required for normal use. Install directly from GitHub in
+a virtual environment:
+
+```bash
+sudo apt update
+sudo apt install -y git python3-venv
+python3 -m venv ~/.venvs/marketmon
+source ~/.venvs/marketmon/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "git+https://github.com/brightonsmith/marketplace-monitor.git"
+python -m playwright install --with-deps chromium
+```
+
+Create a durable configuration outside a cloned repository:
+
+```bash
 marketmon init
 ```
 
-The environment installs the project in editable mode, so local source changes are immediately available without reinstalling the package. To update an existing environment after dependency changes, run:
+`init` opens a numbered editor showing all monitoring, notification, browser,
+and storage settings. Select settings in any order, then choose `S` to validate
+and save. Use `Q` to cancel without creating a file. For an unattended install
+that should use every default, run `marketmon init --defaults`.
 
-```powershell
-conda env update -f environment.yml --prune
-conda activate marketplace-monitor
-```
+When no local `config.yaml` exists, Marketmon defaults to
+`~/.config/marketmon/config.yaml`. An existing local config remains supported.
+Set `MARKETMON_CONFIG` or pass `-c/--config` to choose another path.
 
-The project is also a standard Python package:
-
-```powershell
-python -m pip install .
-playwright install chromium
-marketmon init
-```
-
-`marketmon` is the primary command. The original `marketplace-monitor` command
-remains available as a compatibility alias.
-
-## Configure searches
-
-Each configuration can contain any number of searches. For each product:
-
-1. Open Facebook Marketplace normally.
-2. Search for the product.
-3. Set location, travel radius, price, condition, category, and newest-first sorting in Facebook.
-4. Copy the resulting URL into `config.yaml`.
-5. Add title terms and optional local price limits.
-
-Example:
-
-```yaml
-searches:
-  - name: Flair 58 Plus
-    url: https://www.facebook.com/marketplace/search/?query=flair%2058
-    min_price: 250
-    max_price: 550
-    minimum_relevance: 0.20
-    include_any:
-      - flair 58
-      - flair58
-    exclude:
-      - wanted
-      - looking for
-```
-
-Facebook remains responsible for distance and condition filtering because those values are more reliable in the Marketplace search controls than in listing-card text.
-
-You can edit the main YAML directly, or keep each product in a small transferable
-file:
-
-```powershell
-marketmon template search
-marketmon template search -o flair.yaml
-```
-
-The first command prints the template to the console. The second writes the same
-template to `flair.yaml`. Then edit the generated file:
-
-```yaml
-name: Flair 58 Plus
-url: https://www.facebook.com/marketplace/denver/search?query=flair%2058
-max_price: 500
-minimum_relevance: 0.20
-include_any:
-  - flair 58 plus
-  - flair 58+
-exclude:
-  - wanted
-  - broken
-```
-
-Activate it with:
-
-```powershell
-marketmon add flair.yaml
-```
-
-The `add` command also accepts a complete configuration containing multiple
-entries under `searches`. Search names are unique and case-insensitive. Use
-`--replace` to update an existing search with the same name.
-
-## Configure phone notifications
-
-Install the ntfy mobile app, choose a long random topic name, and subscribe to it. Put the same topic in `config.yaml`:
+For phone notifications, set the provider and ntfy topic:
 
 ```yaml
 notifications:
@@ -120,132 +69,149 @@ notifications:
     topic: replace-with-a-long-random-topic
 ```
 
-Public ntfy topics are accessible to anyone who knows the topic name, so use an unguessable value. For an authenticated ntfy topic, set the token only in the local environment:
+Install the ntfy phone app and subscribe to the same topic. Public ntfy topics
+are accessible to anyone who knows the name, so use a long random value. For an
+authenticated topic, put the token in the service environment as
+`NTFY_ACCESS_TOKEN`; never commit it. The installed service optionally reads
+`~/.config/marketmon/environment`, which can contain:
 
-```powershell
-$env:NTFY_ACCESS_TOKEN = "your-token"
+```text
+NTFY_ACCESS_TOKEN=your-token
 ```
 
-Use `provider: console` while testing if phone notifications are not configured yet.
+Protect it with `chmod 600 ~/.config/marketmon/environment`.
 
-## Save the Facebook session
+### Save the Facebook login
 
-Run:
+Run this from a terminal inside the Pi's graphical desktop:
 
-```powershell
+```bash
 marketmon login
 ```
 
-A browser window opens. Log in manually, complete any two-factor prompt, wait until Marketplace is visible, and then press Enter in PowerShell. Credentials are not placed in the configuration file. The resulting `browser-profile` directory is local and ignored by Git.
+Playwright opens its bundled Chromium. Log in, complete any two-factor or
+checkpoint prompt, wait until Marketplace is visible, then press Enter in the
+terminal. Marketmon verifies the session before saving it.
 
-## Run it
+A headless SSH terminal has no display and cannot open the login browser. On a Pi
+without a connected monitor, use VNC to reach the Pi desktop, open its Terminal
+application, and run the command there. Routine monitoring is headless; VNC is
+only needed for login and later reauthentication.
 
-Test one check:
+### Add and inspect a search
 
-```powershell
-marketmon check
-```
-
-The first successful check records the current listings without sending a burst of old results. Start continuous monitoring with:
-
-```powershell
-marketmon watch
-```
-
-When `notify_on_startup: true` (the default), `watch` sends one concise phone
-summary after its first successful check. This is separate from
-`notify_on_first_run`, which controls individual alerts for listings that already
-exist when the database is first created.
-
-The check interval comes from `check_interval_minutes` in `config.yaml`. The computer must remain awake and connected to the internet while the monitor is running.
-
-## CLI reference
-
-```text
-marketmon init [-c PATH] [--force]
-marketmon template config [-o PATH] [--force]
-marketmon template search [-o PATH] [--force]
-marketmon login [-c PATH]
-marketmon check [-c PATH]
-marketmon report [-c PATH] [-n COUNT] [-s "SEARCH NAME"]
-marketmon watch [-c PATH]
-marketmon add SEARCH.yaml [-c PATH] [--replace]
-marketmon list [-c PATH] [--json]
-marketmon remove "SEARCH NAME" [-c PATH]
-```
-
-`-c` and `--config` may appear before or after the subcommand. Relative browser
-profile and database paths are resolved from the selected configuration file,
-not from the shell's current directory.
-
-The watcher reloads the configuration before every check. A search added by
-another terminal becomes active on the next interval without restarting the
-process. Each newly added search establishes its own silent baseline when
-`notify_on_first_run` is false. Removing a search also cancels any quiet-hours
-notifications still pending for it.
-
-`marketmon list --json` provides stable machine-readable output for scripts and
-remote administration.
-
-`marketmon report` performs a fresh check without changing notification history
-and prints the best current listings directly to the console. Each entry includes
-semantic title-match percentage, the combined relevance/price score, exact or
-candidate status, price, title, location, configured search name, and URL:
-
-```powershell
-marketmon report -n 10
-marketmon report -n 5 -c C:\monitor\config.yaml
-marketmon report -s "Flair 58 Plus" -n 10
-marketmon report -s "Flair 58 Plus" -s "Spider Putter" -n 10
-```
-
-Reports include all active searches by default. `-s/--search` selects an exact
-search name case-insensitively and may be repeated to report on several products.
-
-## Updating a Raspberry Pi remotely
-
-A long-running Pi service can use an explicit managed configuration:
+In Facebook Marketplace, search for the product and configure location, radius,
+condition, price, category, and sorting. Copy the complete results URL, then run:
 
 ```bash
-marketmon watch -c /home/pi/.config/marketmon/config.yaml
+marketmon add
 ```
 
-From Windows, transfer a new product definition and activate it over SSH:
+The command opens a numbered editor showing the name, URL, optional local price
+bounds, exact title phrases, exclusions, and relevance threshold. Select fields
+in any order, then choose `S` to validate and save. Title matching is
+case-insensitive. A short distinctive phrase such as `flair 58` also matches
+longer titles such as `Flair 58 Plus Espresso Maker`.
 
-```powershell
-scp .\flair.yaml pi@10.0.0.61:/tmp/flair.yaml
-ssh pi@10.0.0.61 "marketmon add /tmp/flair.yaml -c /home/pi/.config/marketmon/config.yaml"
-ssh pi@10.0.0.61 "marketmon list -c /home/pi/.config/marketmon/config.yaml"
+Inspect the active searches and current results:
+
+```bash
+marketmon list
+marketmon check
+marketmon check -s "Flair 58 Plus" -n 5
 ```
 
-No service restart is needed. Ten searches are supported; they are loaded in one
-browser session and checked sequentially during each interval.
+`check` is read-only, making it safe for login verification and filter tuning.
+With no active searches, it verifies the saved Facebook session directly.
+When the output looks correct, exercise one real monitoring cycle:
 
-By default, `watch` also sends a status notification after 60 minutes without any
-notification. If listings pass all filters, the status shows the highest-relevance
-match, with lower price breaking close or equal scores. Otherwise it shows the
-highest-scoring candidate from the latest check. Ranking minimizes a weighted
-loss: 90% title distance and 10% price noncompliance. Title similarity combines
-40% word unigram/bigram TF-IDF cosine similarity with 60% character 3–5-gram
-TF-IDF cosine similarity. The query vectors use the search name, Marketplace
-query, and every `include_any` phrase; repeated alias features are deduplicated.
-IDF is calculated from the current fetched listings, so rare, informative terms
-receive more weight without hardcoding any product, brand, or model. If nothing
-clears the search's `minimum_relevance` threshold, the status reports that no
-relevant candidate was found. The default is `0.20`; raise it to suppress weak
-fallback suggestions or lower it to allow broader ones. This threshold affects
-only closest-match status summaries, not listings that pass the normal filters.
-The timer resets after either a listing alert or a status message is successfully
-sent. Configure or disable it in `config.yaml`:
+```bash
+marketmon watch --once
+```
+
+The first successful real cycle silently records existing listings by default.
+Later cycles alert only for new matching listing IDs.
+
+### Run autonomously
+
+Marketmon can install a user-level systemd service using the current Python
+environment and configuration:
+
+```bash
+sudo loginctl enable-linger "$USER"
+marketmon service install
+marketmon service status
+```
+
+Linger lets the user service start at boot without an SSH or desktop login. The
+service starts immediately, restarts after crashes, and starts again after a
+normal reboot or power restoration. Temporary internet failures are retried by
+the next monitoring cycle.
+
+Service controls:
+
+```bash
+marketmon service status
+marketmon service logs
+marketmon service logs --follow
+marketmon service restart
+marketmon service uninstall
+```
+
+Changing searches does not require a restart because `watch` reloads the config
+before every cycle. Restart after changing browser, notification, interval, or
+service environment settings.
+
+If an older system-wide `/etc/systemd/system/marketmon.service` is already
+running, stop and disable it before installing the user service. Marketmon blocks
+installation when it detects the system-wide service, preventing two monitors
+from sending duplicate notifications.
+
+## Search YAML import
+
+Interactive `add` is the normal path. For backups, scripts, or remote deployment,
+`add` also accepts one search mapping or a full configuration containing a
+`searches` list:
 
 ```yaml
-status_interval_minutes: 60  # use 0 to disable
+name: Flair 58 Plus
+url: "https://www.facebook.com/marketplace/denver/search?query=flair%2058"
+min_price: 200
+max_price: 550
+minimum_relevance: 0.20
+include_any:
+  - flair 58
+  - flair58
+exclude:
+  - wanted
+  - looking for
+  - broken
+  - for parts
 ```
 
-To avoid overnight interruptions, add quiet hours using the computer's local
-time. Both listing alerts and status heartbeats are held during this window.
-Matching listings remain pending in SQLite and are sent on the first check after
-quiet hours end. Overnight ranges are supported:
+```bash
+marketmon add flair.yaml -c ~/.config/marketmon/config.yaml
+marketmon add flair.yaml --replace -c ~/.config/marketmon/config.yaml
+```
+
+Search names are unique and case-insensitive. `marketmon list --json` provides
+stable machine-readable output.
+
+## Notifications and failure behavior
+
+- Matching listing alerts use the configured provider.
+- `notify_on_startup: true` sends a startup summary after the first successful
+  cycle. Startup notifications bypass quiet hours because they confirm that the
+  process actually started.
+- Status heartbeats honor `status_interval_minutes` and quiet hours.
+- Matching listings found during quiet hours remain pending in SQLite and are
+  delivered after quiet hours end.
+- An expired Facebook session, login redirect, checkpoint, or two-factor prompt
+  sends one high-priority operational alert through the configured provider.
+  Monitoring continues retrying, but the alert is not repeated every cycle. Run
+  `marketmon login` from the graphical desktop to restore the session.
+
+Example quiet hours:
 
 ```yaml
 quiet_hours:
@@ -253,29 +219,41 @@ quiet_hours:
   end: "07:00"
 ```
 
-Remove `quiet_hours` entirely if you do not want a quiet period.
+Remove `quiet_hours` or set it to `null` to disable the quiet period.
 
-## Development checks
+## Updating
 
-```powershell
-pytest
-python -m compileall src
+Activate the same virtual environment, reinstall from GitHub, and restart:
+
+```bash
+source ~/.venvs/marketmon/bin/activate
+python -m pip install --upgrade --force-reinstall \
+  "git+https://github.com/brightonsmith/marketplace-monitor.git"
+python -m playwright install chromium
+marketmon service restart
 ```
 
-The automated tests are offline and do not access Facebook.
+## Development
 
-## Repository safety
+Clone only when modifying the source:
 
-The committed `.gitignore` excludes:
+```bash
+git clone https://github.com/brightonsmith/marketplace-monitor.git
+cd marketplace-monitor
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+python -m playwright install chromium
+pytest
+python -m compileall -q src
+```
 
-- `config.yaml`
-- `.env`
-- `browser-profile/`
-- `data/` and SQLite databases
-- logs and local environment directories
-
-Do not override these exclusions for session or credential files. Source code can remain public without exposing the local Facebook session.
+Local configuration, browser profiles, SQLite data, environment files, and logs
+are excluded from Git. Do not commit session or notification credentials.
 
 ## Platform limitation
 
-Facebook does not provide a general consumer Marketplace monitoring API. Browser automation can break when Facebook changes its interface and may trigger login checks or account restrictions. Meta's terms restrict automated data collection without permission. Keep checks infrequent and do not use this project to bypass technical restrictions.
+Facebook does not provide a general consumer Marketplace monitoring API. Browser
+automation can break when Facebook changes its interface and may trigger login
+checks or account restrictions. Keep checks infrequent and do not use this project
+to bypass technical restrictions.

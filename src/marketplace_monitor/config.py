@@ -19,6 +19,46 @@ class ConfigError(ValueError):
     """Raised when the monitor configuration is invalid."""
 
 
+def _minutes_to_time(value: int) -> str:
+    hours, minutes = divmod(value, 60)
+    return f"{hours:02d}:{minutes:02d}"
+
+
+def default_config_document() -> dict[str, Any]:
+    """Return the YAML document represented by the Python model defaults."""
+    defaults = AppConfig()
+    quiet_hours = defaults.quiet_hours
+    return {
+        "browser": {
+            "profile_dir": str(defaults.browser.profile_dir),
+            "headless": defaults.browser.headless,
+            "page_load_timeout_seconds": defaults.browser.page_load_timeout_seconds,
+            "scroll_count": defaults.browser.scroll_count,
+        },
+        "database_path": str(defaults.database_path),
+        "check_interval_minutes": defaults.check_interval_minutes,
+        "status_interval_minutes": defaults.status_interval_minutes,
+        "quiet_hours": (
+            {
+                "start": _minutes_to_time(quiet_hours.start_minutes),
+                "end": _minutes_to_time(quiet_hours.end_minutes),
+            }
+            if quiet_hours is not None
+            else None
+        ),
+        "notify_on_first_run": defaults.notify_on_first_run,
+        "notify_on_startup": defaults.notify_on_startup,
+        "notifications": {
+            "provider": defaults.notifications.provider,
+            "ntfy": {
+                "server": defaults.notifications.ntfy.server,
+                "topic": defaults.notifications.ntfy.topic,
+            },
+        },
+        "searches": [],
+    }
+
+
 def _money_to_cents(value: Any, field_name: str) -> int | None:
     if value is None:
         return None
@@ -80,29 +120,38 @@ def _relative_to_config(value: Any, config_path: Path) -> Path:
 
 def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppConfig:
     config_path = Path(config_path)
+    defaults = AppConfig()
 
     browser_raw = raw.get("browser", {})
     if not isinstance(browser_raw, dict):
         raise ConfigError("browser must be a mapping")
     browser = BrowserConfig(
         profile_dir=_relative_to_config(
-            browser_raw.get("profile_dir", "browser-profile"), config_path
+            browser_raw.get("profile_dir", defaults.browser.profile_dir), config_path
         ),
-        headless=bool(browser_raw.get("headless", True)),
-        page_load_timeout_seconds=int(browser_raw.get("page_load_timeout_seconds", 45)),
-        scroll_count=int(browser_raw.get("scroll_count", 2)),
+        headless=bool(browser_raw.get("headless", defaults.browser.headless)),
+        page_load_timeout_seconds=int(
+            browser_raw.get(
+                "page_load_timeout_seconds",
+                defaults.browser.page_load_timeout_seconds,
+            )
+        ),
+        scroll_count=int(
+            browser_raw.get("scroll_count", defaults.browser.scroll_count)
+        ),
     )
     if browser.page_load_timeout_seconds < 1:
         raise ConfigError("browser.page_load_timeout_seconds must be positive")
     if browser.scroll_count < 0:
         raise ConfigError("browser.scroll_count cannot be negative")
 
-    searches_raw = raw.get("searches")
+    searches_raw = raw.get("searches", [])
     if not isinstance(searches_raw, list):
         raise ConfigError("searches must be a list")
 
     searches: list[SearchConfig] = []
     search_names: set[str] = set()
+    search_defaults = SearchConfig(name="", url="")
     for index, item in enumerate(searches_raw):
         prefix = f"searches[{index}]"
         if not isinstance(item, dict):
@@ -127,10 +176,12 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
                 url=url.strip(),
                 min_price_cents=min_price,
                 max_price_cents=max_price,
-                include_any=_string_tuple(item.get("include_any"), f"{prefix}.include_any"),
+                include_any=_string_tuple(
+                    item.get("include_any"), f"{prefix}.include_any"
+                ),
                 exclude=_string_tuple(item.get("exclude"), f"{prefix}.exclude"),
                 minimum_relevance=_relevance_threshold(
-                    item.get("minimum_relevance", 0.20),
+                    item.get("minimum_relevance", search_defaults.minimum_relevance),
                     f"{prefix}.minimum_relevance",
                 ),
             )
@@ -139,24 +190,30 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
     notification_raw = raw.get("notifications", {})
     if not isinstance(notification_raw, dict):
         raise ConfigError("notifications must be a mapping")
-    provider = str(notification_raw.get("provider", "console")).casefold()
+    provider = str(
+        notification_raw.get("provider", defaults.notifications.provider)
+    ).casefold()
     if provider not in {"console", "ntfy"}:
         raise ConfigError("notifications.provider must be 'console' or 'ntfy'")
     ntfy_raw = notification_raw.get("ntfy", {})
     if not isinstance(ntfy_raw, dict):
         raise ConfigError("notifications.ntfy must be a mapping")
     ntfy = NtfyConfig(
-        server=str(ntfy_raw.get("server", "https://ntfy.sh")).rstrip("/"),
-        topic=str(ntfy_raw.get("topic", "")).strip(),
+        server=str(ntfy_raw.get("server", defaults.notifications.ntfy.server)).rstrip(
+            "/"
+        ),
+        topic=str(ntfy_raw.get("topic", defaults.notifications.ntfy.topic)).strip(),
     )
     if provider == "ntfy" and not ntfy.topic:
         raise ConfigError("notifications.ntfy.topic is required for the ntfy provider")
 
-    interval = int(raw.get("check_interval_minutes", 10))
+    interval = int(raw.get("check_interval_minutes", defaults.check_interval_minutes))
     if interval < 1:
         raise ConfigError("check_interval_minutes must be positive")
 
-    status_interval = int(raw.get("status_interval_minutes", 60))
+    status_interval = int(
+        raw.get("status_interval_minutes", defaults.status_interval_minutes)
+    )
     if status_interval < 0:
         raise ConfigError("status_interval_minutes cannot be negative")
 
@@ -165,7 +222,9 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
     if quiet_hours_raw is not None:
         if not isinstance(quiet_hours_raw, dict):
             raise ConfigError("quiet_hours must be a mapping")
-        start_minutes = _time_to_minutes(quiet_hours_raw.get("start"), "quiet_hours.start")
+        start_minutes = _time_to_minutes(
+            quiet_hours_raw.get("start"), "quiet_hours.start"
+        )
         end_minutes = _time_to_minutes(quiet_hours_raw.get("end"), "quiet_hours.end")
         if start_minutes == end_minutes:
             raise ConfigError("quiet_hours.start and quiet_hours.end must be different")
@@ -177,15 +236,19 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
     return AppConfig(
         browser=browser,
         database_path=_relative_to_config(
-            raw.get("database_path", "data/marketplace.db"), config_path
+            raw.get("database_path", defaults.database_path), config_path
         ),
         check_interval_minutes=interval,
-        notify_on_first_run=bool(raw.get("notify_on_first_run", False)),
+        notify_on_first_run=bool(
+            raw.get("notify_on_first_run", defaults.notify_on_first_run)
+        ),
         notifications=NotificationConfig(provider=provider, ntfy=ntfy),
         searches=tuple(searches),
         status_interval_minutes=status_interval,
         quiet_hours=quiet_hours,
-        notify_on_startup=bool(raw.get("notify_on_startup", True)),
+        notify_on_startup=bool(
+            raw.get("notify_on_startup", defaults.notify_on_startup)
+        ),
     )
 
 

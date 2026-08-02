@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "marketplace-monitor"
-version = "0.2.0"
+version = "0.3.0"
 description = "Monitor Facebook Marketplace searches and send notifications for new matching listings."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,9 +22,6 @@ marketplace-monitor = "marketplace_monitor.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-marketplace_monitor = ["templates/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
