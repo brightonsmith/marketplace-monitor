@@ -12,8 +12,8 @@ Facebook login challenges.
 The public CLI has one command for each job:
 
 ```text
-marketmon init                          create the configuration
-marketmon login                         save and verify a Facebook session
+marketmon init                         create the configuration
+marketmon login                        save and verify a Facebook session
 marketmon add [SEARCH.yaml]             add a search interactively or from YAML
 marketmon list                          list active searches
 marketmon remove "SEARCH NAME"          remove a search
@@ -31,7 +31,7 @@ profile and database paths are resolved from the configuration file's directory.
 
 ## Raspberry Pi quick start
 
-No repository clone is required for normal use. Install directly from GitHub in
+No repository clone is required for normal use. Install the released package in
 a virtual environment:
 
 ```bash
@@ -40,7 +40,7 @@ sudo apt install -y git python3-venv
 python3 -m venv ~/.venvs/marketmon
 source ~/.venvs/marketmon/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "git+https://github.com/brightonsmith/marketplace-monitor.git"
+python -m pip install "marketmon==0.3.1"
 python -m playwright install --with-deps chromium
 ```
 
@@ -223,14 +223,21 @@ Remove `quiet_hours` or set it to `null` to disable the quiet period.
 
 ## Updating
 
-Activate the same virtual environment, reinstall from GitHub, and restart:
+Activate the same virtual environment, upgrade from PyPI, and restart:
 
 ```bash
 source ~/.venvs/marketmon/bin/activate
-python -m pip install --upgrade --force-reinstall \
-  "git+https://github.com/brightonsmith/marketplace-monitor.git"
+python -m pip install --upgrade marketmon
 python -m playwright install chromium
 marketmon service restart
+```
+
+Installations of version 0.3.0 used the old distribution name. Migrate those
+once before installing a PyPI release:
+
+```bash
+python -m pip uninstall -y marketplace-monitor
+python -m pip install "marketmon==0.3.1"
 ```
 
 ## Development
