@@ -117,6 +117,38 @@ searches:
     assert load_config(path).searches[0].minimum_relevance == 0.35
 
 
+def test_load_config_accepts_hard_radius_without_origin(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+searches:
+  - name: Example
+    url: https://www.facebook.com/marketplace/denver/search?query=example
+    max_distance_miles: 40
+""",
+        encoding="utf-8",
+    )
+    assert load_config(path).searches[0].max_distance_miles == 40
+
+
+@pytest.mark.parametrize("value", [0, -1, "nearby", True])
+def test_load_config_rejects_invalid_hard_radius(
+    tmp_path: Path, value: object
+) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"""
+searches:
+  - name: Example
+    url: https://www.facebook.com/marketplace/search?query=example
+    max_distance_miles: {str(value).lower()}
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="max_distance_miles"):
+        load_config(path)
+
+
 @pytest.mark.parametrize("value", [-0.01, 1.01, "high", True])
 def test_load_config_rejects_invalid_minimum_relevance(
     tmp_path: Path, value: object

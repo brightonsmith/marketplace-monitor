@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlsplit
 
 from playwright.async_api import (
@@ -11,8 +13,10 @@ from playwright.async_api import (
     async_playwright,
 )
 
+from .geocoding import DistanceFilter, GeocodingError
 from .models import BrowserConfig, Listing, SearchConfig
 from .parser import listing_from_card
+from .ranking import rank_listings
 
 CARD_SCRIPT = """
 anchors => anchors.map(anchor => {
@@ -26,8 +30,30 @@ anchors => anchors.map(anchor => {
       bestText = candidate;
     }
   }
-  return { href: anchor.href, text: bestText };
+  const image = anchor.querySelector('img') || node.querySelector('img');
+  return {
+    href: anchor.href,
+    text: bestText,
+    image_url: image ? (image.currentSrc || image.src || null) : null
+  };
 })
+"""
+
+SEARCH_ORIGIN_SCRIPT = """
+() => {
+  const pattern = /^(.+?)\\s*[·•]\\s*Within\\s+\\d+(?:\\.\\d+)?\\s*(?:mi|miles)\\b/i;
+  const candidates = document.querySelectorAll('button, [role="button"], span');
+  for (const element of candidates) {
+    const text = (element.innerText || element.textContent || "")
+      .replace(/\\s+/g, " ")
+      .trim();
+    const match = text.match(pattern);
+    if (match && element.getClientRects().length) {
+      return match[1].trim();
+    }
+  }
+  return null;
+}
 """
 
 
@@ -113,9 +139,22 @@ async def _extract_cards(page: Page) -> list[dict[str, str]]:
     return await locator.evaluate_all(CARD_SCRIPT)
 
 
+async def _extract_search_origin(page: Page) -> str | None:
+    for _ in range(20):
+        origin = await page.evaluate(SEARCH_ORIGIN_SCRIPT)
+        if origin:
+            return origin
+        await page.wait_for_timeout(500)
+    return None
+
+
 async def fetch_listings(
     config: BrowserConfig,
     searches: tuple[SearchConfig, ...],
+    *,
+    distance_filter: DistanceFilter | None = None,
+    pre_distance_filter: Callable[[Listing, SearchConfig], bool] | None = None,
+    distance_result_limit: int | None = None,
 ) -> list[Listing]:
     if not searches:
         return []
@@ -126,14 +165,65 @@ async def fetch_listings(
         for search in searches:
             await page.goto(search.url, wait_until="domcontentloaded")
             await _ensure_authenticated(page)
+            origin_location = None
+            if search.max_distance_miles is not None:
+                if distance_filter is None:
+                    raise GeocodingError(
+                        "A distance filter is required when max_distance_miles is set"
+                    )
+                origin_location = await _extract_search_origin(page)
+                if not origin_location:
+                    raise GeocodingError(
+                        f"Could not determine the Facebook search location for "
+                        f"'{search.name}'"
+                    )
             for _ in range(config.scroll_count):
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(1_000)
             cards = await _extract_cards(page)
+            search_listings: list[Listing] = []
             for card in cards:
                 listing = listing_from_card(card, search)
-                if listing is not None:
-                    listings.setdefault(listing.listing_id, listing)
+                if listing is None:
+                    continue
+                if pre_distance_filter is not None and not pre_distance_filter(
+                    listing, search
+                ):
+                    continue
+                search_listings.append(listing)
+
+            if distance_result_limit is not None:
+                if distance_result_limit < 1:
+                    raise ValueError("distance_result_limit must be positive")
+                search_listings = [
+                    candidate.listing
+                    for candidate in rank_listings(
+                        search_listings,
+                        {search.name: search},
+                    )
+                    if not candidate.excluded
+                ]
+
+            accepted_for_search = 0
+            for listing in search_listings:
+                if search.max_distance_miles is not None:
+                    if not listing.location:
+                        continue
+                    distance = await distance_filter.distance_between(
+                        origin_location,
+                        listing.location,
+                    )
+                    if distance is None or distance > search.max_distance_miles:
+                        continue
+                    listing = replace(listing, distance_miles=distance)
+                listings.setdefault(listing.listing_id, listing)
+                accepted_for_search += 1
+                if (
+                    search.max_distance_miles is not None
+                    and distance_result_limit is not None
+                    and accepted_for_search >= distance_result_limit
+                ):
+                    break
     finally:
         await context.close()
         await playwright.stop()

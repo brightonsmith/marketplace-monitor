@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from .browser import BrowserSessionError, fetch_listings
+from .geocoding import DistanceFilter
 from .models import AppConfig, Listing, QuietHoursConfig, SearchConfig, StatusUpdate
 from .notifier import Notifier
 from .parser import matches_search
@@ -22,6 +23,7 @@ class RunSummary:
     notified: int
     held: int
     status: StatusUpdate
+    dismissed: int = 0
 
 
 def quiet_hours_active(quiet_hours: QuietHoursConfig | None, at: datetime) -> bool:
@@ -60,23 +62,48 @@ async def run_once(
     now: datetime | None = None,
 ) -> RunSummary:
     quiet = quiet_hours_active(config.quiet_hours, now or datetime.now())
-    listings = (
-        await fetch_listings(config.browser, config.searches)
-        if config.searches
-        else []
+    distance_filter = (
+        DistanceFilter(config.database_path)
+        if any(search.max_distance_miles is not None for search in config.searches)
+        else None
     )
+    try:
+        if not config.searches:
+            listings = []
+        elif distance_filter is None:
+            listings = await fetch_listings(config.browser, config.searches)
+        else:
+            listings = await fetch_listings(
+                config.browser,
+                config.searches,
+                distance_filter=distance_filter,
+                pre_distance_filter=matches_search,
+            )
+    finally:
+        if distance_filter is not None:
+            distance_filter.close()
     searches = {search.name: search for search in config.searches}
-    matched: list[Listing] = [
-        listing
-        for listing in listings
-        if matches_search(listing, searches[listing.search_name])
-    ]
-    best_listing, is_exact_match = _best_status_listing(listings, matched, searches)
 
     new_count = 0
     notified_count = 0
     held_count = 0
+    dismissed_count = 0
     with ListingStore(config.database_path) as store:
+        dismissed_ids = store.dismissed_listing_ids()
+        visible_listings = [
+            listing for listing in listings if listing.listing_id not in dismissed_ids
+        ]
+        dismissed_count = len(listings) - len(visible_listings)
+        matched: list[Listing] = [
+            listing
+            for listing in visible_listings
+            if matches_search(listing, searches[listing.search_name])
+        ]
+        best_listing, is_exact_match = _best_status_listing(
+            visible_listings,
+            matched,
+            searches,
+        )
         search_names = tuple(search.name for search in config.searches)
         store.prepare_search_baselines(search_names)
         baseline_searches = {
@@ -110,7 +137,7 @@ async def run_once(
             store.mark_search_initialized(search_name)
         store.mark_initialized()
 
-    return RunSummary(
+    summary = RunSummary(
         discovered=len(listings),
         matched=len(matched),
         new=new_count,
@@ -122,7 +149,24 @@ async def run_once(
             listing=best_listing,
             is_exact_match=is_exact_match,
         ),
+        dismissed=dismissed_count,
     )
+    ranked = [
+        candidate
+        for candidate in rank_listings(visible_listings, searches)
+        if not candidate.excluded
+    ]
+    with ListingStore(config.database_path) as store:
+        store.replace_dashboard_candidates(search_names, ranked)
+        store.record_run(
+            discovered=summary.discovered,
+            matched=summary.matched,
+            new=summary.new,
+            notified=summary.notified,
+            held=summary.held,
+            dismissed=summary.dismissed,
+        )
+    return summary
 
 
 def maybe_send_status(
@@ -205,7 +249,8 @@ async def watch(
             print(
                 f"Check complete: {summary.discovered} discovered, "
                 f"{summary.matched} matched, {summary.new} new, "
-                f"{summary.notified} notified, {summary.held} held"
+                f"{summary.notified} notified, {summary.held} held, "
+                f"{summary.dismissed} dismissed"
             )
         except BrowserSessionError as error:
             print(f"Authentication failed: {error}")

@@ -17,6 +17,7 @@ from marketplace_monitor.models import (
     StatusUpdate,
 )
 from marketplace_monitor.notifier import Notifier
+from marketplace_monitor.storage import ListingStore
 
 
 class RecordingNotifier(Notifier):
@@ -474,3 +475,25 @@ def test_run_once_with_no_active_searches_does_not_open_browser(
     summary = asyncio.run(monitor_module.run_once(config, RecordingNotifier()))
     assert summary.discovered == 0
     assert summary.matched == 0
+
+
+def test_dismissed_listing_is_omitted_from_status_and_notifications(
+    tmp_path: Path, monkeypatch
+) -> None:
+    item = listing("1")
+
+    async def fake_fetch(*_args):
+        return [item]
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    config = make_config(tmp_path)
+    with ListingStore(config.database_path) as store:
+        store.record(item)
+        store.set_disposition(item.listing_id, "dismissed")
+
+    summary = asyncio.run(monitor_module.run_once(config, RecordingNotifier()))
+
+    assert summary.dismissed == 1
+    assert summary.matched == 0
+    assert summary.notified == 0
+    assert summary.status.listing is None

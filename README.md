@@ -17,14 +17,33 @@ marketmon login                        save and verify a Facebook session
 marketmon add [SEARCH.yaml]             add a search interactively or from YAML
 marketmon list                          list active searches
 marketmon remove "SEARCH NAME"          remove a search
-marketmon check [-n COUNT] [-s NAME]    inspect current results without side effects
+marketmon feedback LISTING_ID STATE      save interested/dismissed feedback
+marketmon check [-n COUNT] [-s NAME]    inspect results without notifications/history changes
+marketmon dashboard                     serve the local results dashboard
 marketmon watch [--once]                run real monitoring cycles
 marketmon service ACTION                manage autonomous Linux operation
 ```
 
-`check` never changes notification history or sends listing alerts. `watch --once`
+`check` never changes notification history or sends listing alerts. It only
+refreshes the separate dashboard snapshot. `watch --once`
 performs one real cycle, including baselining, deduplication, quiet hours, and
 eligible notifications. `watch` repeats those cycles continuously.
+
+`check` refreshes a separate dashboard snapshot containing candidate titles,
+prices, images, locations, distances, and ranking details. This snapshot never
+participates in notification deduplication.
+
+Launch the dashboard after a check:
+
+```bash
+marketmon check
+marketmon dashboard
+```
+
+Open `http://localhost:8000`. To expose it on a private Pi network, bind it
+explicitly with `marketmon dashboard --host 0.0.0.0` and use the Pi's private
+address. The dashboard includes active, interested, and dismissed views,
+per-search result limits, feedback controls, and recent monitoring diagnostics.
 
 `-c/--config` may appear before or after a top-level command. Relative browser
 profile and database paths are resolved from the configuration file's directory.
@@ -108,7 +127,8 @@ marketmon add
 ```
 
 The command opens a numbered editor showing the name, URL, optional local price
-bounds, exact title phrases, exclusions, and relevance threshold. Select fields
+bounds, exact title phrases, exclusions, relevance threshold, and an optional
+hard radius. Select fields
 in any order, then choose `S` to validate and save. Title matching is
 case-insensitive. A short distinctive phrase such as `flair 58` also matches
 longer titles such as `Flair 58 Plus Espresso Maker`.
@@ -131,6 +151,36 @@ marketmon watch --once
 
 The first successful real cycle silently records existing listings by default.
 Later cycles alert only for new matching listing IDs.
+
+Facebook occasionally mixes distant local-pickup results into a radius-limited
+search. Set `max_distance_miles` to enforce the radius independently:
+
+```yaml
+max_distance_miles: 40
+```
+
+Marketmon reads the selected search center from Facebook's location control, so
+the origin is not duplicated in configuration. It geocodes Facebook's displayed
+listing city and excludes unresolved or out-of-radius listings. Distance is
+therefore city-center approximate. Title, price, and exclusion checks happen
+before geocoding, and successful lookups are cached in SQLite. An interactive
+`marketmon check` is limited to one uncached lookup per second; autonomous
+monitoring uses the stricter four-lookups-per-minute limit for regular scripts.
+Geocoding data is © OpenStreetMap contributors and is subject to the Nominatim
+usage policy.
+Set `MARKETMON_GEOCODER_DOMAIN` to switch to a compatible Nominatim provider or
+self-hosted instance without changing Marketmon.
+
+Save feedback for any previously seen listing using the ID printed by `check`:
+
+```bash
+marketmon feedback 123456789 dismissed
+marketmon feedback 123456789 interested
+marketmon feedback 123456789 clear
+```
+
+Dismissed listings are removed from future status summaries and reports. Reports
+are grouped by search, and `check -n 5` shows up to five results for each search.
 
 ### Run autonomously
 
@@ -179,6 +229,7 @@ url: "https://www.facebook.com/marketplace/denver/search?query=flair%2058"
 min_price: 200
 max_price: 550
 minimum_relevance: 0.20
+max_distance_miles: 40
 include_any:
   - flair 58
   - flair58

@@ -31,9 +31,12 @@ from .config_manager import (
     remove_search,
 )
 from .models import SearchConfig
+from .geocoding import DistanceFilter
+from .parser import matches_search
 from .monitor import run_once, send_authentication_alert, watch
 from .notifier import build_notifier, format_price
 from .report import format_report
+from .ranking import rank_listings
 from .service import (
     ServiceError,
     install_service,
@@ -43,6 +46,7 @@ from .service import (
     service_status,
     uninstall_service,
 )
+from .storage import ListingStore
 
 
 def _default_config_path() -> Path:
@@ -144,12 +148,32 @@ def build_parser() -> argparse.ArgumentParser:
     _config_argument(remove_parser, subcommand=True)
     remove_parser.add_argument("name", help="search name, matched case-insensitively")
 
+    feedback_parser = subparsers.add_parser(
+        "feedback", help="mark a known listing interested, dismissed, or clear"
+    )
+    _config_argument(feedback_parser, subcommand=True)
+    feedback_parser.add_argument("listing_id", help="Facebook Marketplace listing ID")
+    feedback_parser.add_argument(
+        "disposition", choices=("interested", "dismissed", "clear")
+    )
+
     check_parser = subparsers.add_parser(
         "check", help="verify login and show current listings without changing history"
     )
     _config_argument(check_parser, subcommand=True)
     check_parser.add_argument(
         "-n", "--limit", type=int, default=10, help="listings to show (default: 10)"
+    )
+
+    dashboard_parser = subparsers.add_parser(
+        "dashboard", help="serve the local Marketplace dashboard"
+    )
+    _config_argument(dashboard_parser, subcommand=True)
+    dashboard_parser.add_argument(
+        "--host", default="127.0.0.1", help="address to bind (default: 127.0.0.1)"
+    )
+    dashboard_parser.add_argument(
+        "--port", type=int, default=8000, help="port to bind (default: 8000)"
     )
     check_parser.add_argument(
         "-s",
@@ -231,6 +255,7 @@ def _list_searches(args: argparse.Namespace) -> None:
                             else None
                         ),
                         "minimum_relevance": search.minimum_relevance,
+                        "max_distance_miles": search.max_distance_miles,
                     }
                     for search in searches
                 ],
@@ -244,6 +269,8 @@ def _list_searches(args: argparse.Namespace) -> None:
     print(f"Active searches ({len(searches)}):")
     for index, search in enumerate(searches, start=1):
         print(f"{index}. {search.name} · {_price_range(search)}")
+        if search.max_distance_miles is not None:
+            print(f"   Hard radius: {search.max_distance_miles:g} miles")
         print(f"   {search.url}")
 
 
@@ -468,6 +495,7 @@ def _interactive_search() -> dict[str, Any] | None:
         "min_price": None,
         "max_price": None,
         "minimum_relevance": 0.20,
+        "max_distance_miles": None,
         "include_any": [],
         "exclude": ["wanted", "looking for", "broken", "for parts", "parts only"],
     }
@@ -486,6 +514,9 @@ def _interactive_search() -> dict[str, Any] | None:
         print(f"  5. Exact title phrases: {_display_value(search['include_any'])}")
         print(f"  6. Excluded title phrases: {_display_value(search['exclude'])}")
         print(f"  7. Minimum relevance: {search['minimum_relevance']}")
+        print(
+            f"  8. Hard radius in miles: {_display_value(search['max_distance_miles'])}"
+        )
         print("\n  S. Save search    Q. Cancel")
         choice = input("Select a setting: ").strip().casefold()
         if choice == "q":
@@ -533,6 +564,13 @@ def _interactive_search() -> dict[str, Any] | None:
                 search["minimum_relevance"] = relevance
             else:
                 print("Minimum relevance must be between 0 and 1.")
+        elif choice == "8":
+            search["max_distance_miles"] = _prompt_number(
+                "Maximum distance in miles",
+                search["max_distance_miles"],
+                minimum=0.1,
+                allow_none=True,
+            )
         else:
             print("Select a setting number, S to save, or Q to cancel.")
 
@@ -553,7 +591,49 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
                 await verify_session(config.browser)
                 print("Facebook session is valid. No active searches.")
                 return
-            listings = await fetch_listings(config.browser, selected_searches)
+            distance_filter = (
+                DistanceFilter(config.database_path, min_delay_seconds=1.0)
+                if any(
+                    search.max_distance_miles is not None
+                    for search in selected_searches
+                )
+                else None
+            )
+            try:
+                if distance_filter is None:
+                    listings = await fetch_listings(
+                        config.browser,
+                        selected_searches,
+                    )
+                else:
+                    listings = await fetch_listings(
+                        config.browser,
+                        selected_searches,
+                        distance_filter=distance_filter,
+                        distance_result_limit=args.limit,
+                    )
+            finally:
+                if distance_filter is not None:
+                    distance_filter.close()
+            with ListingStore(config.database_path) as store:
+                dismissed_ids = store.dismissed_listing_ids()
+                ranked = [
+                    candidate
+                    for candidate in rank_listings(
+                        listings,
+                        {search.name: search for search in selected_searches},
+                    )
+                    if not candidate.excluded
+                ]
+                store.replace_dashboard_candidates(
+                    tuple(search.name for search in selected_searches),
+                    ranked,
+                )
+            listings = [
+                listing
+                for listing in listings
+                if listing.listing_id not in dismissed_ids
+            ]
             print(format_report(listings, selected_searches, limit=args.limit))
             return
 
@@ -562,7 +642,8 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
             print(
                 f"Check complete: {summary.discovered} discovered, "
                 f"{summary.matched} matched, {summary.new} new, "
-                f"{summary.notified} notified, {summary.held} held"
+                f"{summary.notified} notified, {summary.held} held, "
+                f"{summary.dismissed} dismissed"
             )
             return
 
@@ -634,6 +715,20 @@ def _run_management_command(args: argparse.Namespace) -> bool:
         return True
     if args.command == "remove":
         print(f"Removed: {remove_search(args.config, args.name)}")
+        return True
+    if args.command == "feedback":
+        config = load_config(args.config)
+        disposition = None if args.disposition == "clear" else args.disposition
+        with ListingStore(config.database_path) as store:
+            store.set_disposition(args.listing_id, disposition)
+        print(f"Listing {args.listing_id}: {args.disposition}")
+        return True
+    if args.command == "dashboard":
+        if not 1 <= args.port <= 65535:
+            raise ConfigError("dashboard port must be between 1 and 65535")
+        from .dashboard import run_dashboard
+
+        run_dashboard(args.config, host=args.host, port=args.port)
         return True
     if args.command == "service":
         _run_service_command(args)
