@@ -67,13 +67,18 @@
                   <h3><a href="{{ listing.url }}" target="_blank" rel="noreferrer">{{ listing.title }}</a></h3>
                   <p class="location">{{ listing.location or 'Location unavailable' }}</p>
                   <p class="ranking"><span class="badge">{{ 'Exact match' if record.candidate.exact else 'Candidate' }}</span> {{ '%.0f'|format(record.candidate.relevance * 100) }}% match · {{ '%.0f'|format(record.candidate.score * 100) }}% score</p>
+                  {% if not record.is_current %}<p class="availability">Not in latest search results</p>{% endif %}
                   <p class="listing-id">ID {{ listing.listing_id }}</p>
                   <p class="seen">First seen {{ record.first_seen_utc[:10] }} · Last seen {{ record.last_seen_utc[:19].replace('T', ' ') }} UTC</p>
                   <div class="actions">
-                    <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}" hx-post="{{ url_for('feedback', listing_id=listing.listing_id) }}">
+                    <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}" target="_blank">
                       <input type="hidden" name="view" value="{{ view }}">
                       <input type="hidden" name="limit" value="{{ limit }}">
                       <button type="submit" name="disposition" value="interested" class="secondary" {% if record.disposition == 'interested' %}aria-pressed="true"{% endif %}>Interested</button>
+                    </form>
+                    <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}" hx-post="{{ url_for('feedback', listing_id=listing.listing_id) }}">
+                      <input type="hidden" name="view" value="{{ view }}">
+                      <input type="hidden" name="limit" value="{{ limit }}">
                       <button type="submit" name="disposition" value="dismissed" class="outline contrast">Dismiss</button>
                       {% if record.disposition %}<button type="submit" name="disposition" value="clear" class="outline secondary">Clear</button>{% endif %}
                     </form>

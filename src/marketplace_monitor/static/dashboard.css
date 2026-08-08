@@ -30,13 +30,14 @@ body { background: #f4f6f8; }
 .card-topline { display: flex; justify-content: space-between; font-size: .9rem; }
 .price { color: #17202a; font-size: 1.1rem; font-weight: 700; }
 .location, .ranking, .seen, .listing-id { margin: .25rem 0; font-size: .88rem; }
+.availability { margin: .35rem 0; color: #9a6700; font-size: .82rem; font-weight: 700; }
 .seen { color: #98a2b3; font-size: .75rem; }
 .listing-id { color: #98a2b3; font-family: ui-monospace, monospace; font-size: .72rem; }
 .badge { display: inline-block; margin-right: .3rem; border-radius: 999px; padding: .12rem .45rem; background: #e8f5ef; color: #176b4d; font-size: .72rem; font-weight: 700; }
 .diagnostics { margin-bottom: 2rem; }
 .table-wrap { overflow-x: auto; }
 .diagnostics table { font-size: .82rem; white-space: nowrap; }
-.actions { margin-top: auto; padding-top: 1rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: auto; padding-top: 1rem; }
 .actions form { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; }
 .actions button { width: auto; margin: 0; padding: .55rem .8rem; font-size: .85rem; }
 .actions button[aria-pressed="true"] { background: #176b4d; border-color: #176b4d; color: white; }

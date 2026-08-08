@@ -59,9 +59,34 @@ def test_dashboard_renders_rich_listing_and_updates_feedback(tmp_path: Path) -> 
         data={"disposition": "interested", "view": "active", "limit": "10"},
     )
     assert response.status_code == 303
-    assert response.headers["HX-Refresh"] == "true"
+    assert response.headers["Location"] == "https://example.test/listing"
     interested = client.get("/?view=interested&limit=10")
     assert b"Flair 58 Plus" in interested.data
+
+    dismissed = client.post(
+        "/listings/123/feedback",
+        data={"disposition": "dismissed", "view": "active", "limit": "10"},
+        headers={"HX-Request": "true"},
+    )
+    assert dismissed.status_code == 204
+    assert dismissed.headers["HX-Refresh"] == "true"
+    assert b"<!doctype html>" not in dismissed.data
+
+
+def test_interested_button_opens_listing_without_htmx(tmp_path: Path) -> None:
+    database = tmp_path / "marketplace.db"
+    config = tmp_path / "config.yaml"
+    _config(config, database)
+    item = Listing("123", "Flair", "https://example.test/123", "Flair 58 Plus")
+    with ListingStore(database) as store:
+        store.replace_dashboard_candidates(
+            ("Flair 58 Plus",),
+            [RankedListing(item, 0.9, 0.9, True, False)],
+        )
+
+    page = create_app(config).test_client().get("/")
+    assert b'target="_blank"' in page.data
+    assert b'hx-post="/listings/123/feedback"' in page.data
 
 
 def test_dashboard_rejects_invalid_view_and_limit(tmp_path: Path) -> None:

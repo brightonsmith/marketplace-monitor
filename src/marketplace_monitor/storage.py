@@ -18,6 +18,7 @@ class StoredCandidate:
     first_seen_utc: str
     last_seen_utc: str
     disposition: str | None
+    is_current: bool
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,9 @@ class ListingStore:
                 PRIMARY KEY (listing_id, search_name)
             )
             """
+        )
+        self._ensure_column(
+            "dashboard_candidates", "is_current", "INTEGER NOT NULL DEFAULT 1"
         )
         self.connection.execute(
             """
@@ -334,26 +338,14 @@ class ListingStore:
         """Replace current report snapshots without changing notification history."""
         now = datetime.now(UTC).isoformat()
         for search_name in search_names:
-            current_ids = [
-                candidate.listing.listing_id
-                for candidate in candidates
-                if candidate.listing.search_name == search_name
-            ]
-            if current_ids:
-                placeholders = ",".join("?" for _ in current_ids)
-                self.connection.execute(
-                    f"""
-                    DELETE FROM dashboard_candidates
-                    WHERE search_name = ? COLLATE NOCASE
-                      AND listing_id NOT IN ({placeholders})
-                    """,
-                    (search_name, *current_ids),
-                )
-            else:
-                self.connection.execute(
-                    "DELETE FROM dashboard_candidates WHERE search_name = ? COLLATE NOCASE",
-                    (search_name,),
-                )
+            self.connection.execute(
+                """
+                UPDATE dashboard_candidates
+                SET is_current = 0
+                WHERE search_name = ? COLLATE NOCASE
+                """,
+                (search_name,),
+            )
         for candidate in candidates:
             listing = candidate.listing
             self.connection.execute(
@@ -361,8 +353,8 @@ class ListingStore:
                 INSERT INTO dashboard_candidates (
                     listing_id, search_name, title, url, price_cents, location,
                     distance_miles, image_url, relevance, score, exact,
-                    first_seen_utc, last_seen_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    first_seen_utc, last_seen_utc, is_current
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(listing_id, search_name) DO UPDATE SET
                     title = excluded.title,
                     url = excluded.url,
@@ -376,7 +368,8 @@ class ListingStore:
                     relevance = excluded.relevance,
                     score = excluded.score,
                     exact = excluded.exact,
-                    last_seen_utc = excluded.last_seen_utc
+                    last_seen_utc = excluded.last_seen_utc,
+                    is_current = 1
                 """,
                 (
                     listing.listing_id,
@@ -394,7 +387,31 @@ class ListingStore:
                     now,
                 ),
             )
+        self.connection.execute(
+            """
+            DELETE FROM dashboard_candidates
+            WHERE is_current = 0
+              AND listing_id NOT IN (
+                  SELECT listing_id
+                  FROM listing_feedback
+                  WHERE disposition = 'interested'
+              )
+            """
+        )
         self.connection.commit()
+
+    def dashboard_listing_url(self, listing_id: str) -> str | None:
+        row = self.connection.execute(
+            """
+            SELECT url
+            FROM dashboard_candidates
+            WHERE listing_id = ?
+            ORDER BY last_seen_utc DESC
+            LIMIT 1
+            """,
+            (listing_id,),
+        ).fetchone()
+        return row["url"] if row else None
 
     def dashboard_listings(self, view: str = "active") -> list[StoredCandidate]:
         """Return current candidate snapshots and feedback for the dashboard."""
@@ -412,7 +429,8 @@ class ListingStore:
                    candidates.location, candidates.distance_miles,
                    candidates.image_url, candidates.relevance, candidates.score,
                    candidates.exact, candidates.first_seen_utc,
-                   candidates.last_seen_utc, feedback.disposition
+                   candidates.last_seen_utc, feedback.disposition,
+                   candidates.is_current
             FROM dashboard_candidates AS candidates
             LEFT JOIN listing_feedback AS feedback
               ON feedback.listing_id = candidates.listing_id
@@ -438,6 +456,7 @@ class ListingStore:
                 first_seen_utc=row["first_seen_utc"],
                 last_seen_utc=row["last_seen_utc"],
                 disposition=row["disposition"],
+                is_current=bool(row["is_current"]),
             )
             for row in rows
         ]

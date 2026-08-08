@@ -94,6 +94,29 @@ def test_dashboard_snapshot_is_separate_and_keeps_images_and_feedback(
         }
         assert store.dashboard_listings("interested")[0].listing == item
 
+        store.replace_dashboard_candidates(("Flair",), [])
+        interested = store.dashboard_listings("interested")
+        assert interested[0].listing == item
+        assert not interested[0].is_current
+
+        refreshed = Listing(
+            "candidate-only",
+            "Flair 58 Plus - reduced",
+            "https://example.test/1",
+            "Flair",
+            40_000,
+            "Denver, CO",
+            4.2,
+            "https://example.test/new-image.jpg",
+        )
+        store.replace_dashboard_candidates(
+            ("Flair",),
+            [RankedListing(refreshed, 0.93, 0.94, True, False)],
+        )
+        interested = store.dashboard_listings("interested")
+        assert interested[0].listing == refreshed
+        assert interested[0].is_current
+
 
 def test_store_records_monitoring_diagnostics(tmp_path: Path) -> None:
     with ListingStore(tmp_path / "listings.db") as store:

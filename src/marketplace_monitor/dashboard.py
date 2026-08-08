@@ -18,6 +18,7 @@ class DashboardListing:
     first_seen_utc: str
     last_seen_utc: str
     disposition: str | None
+    is_current: bool
 
 
 def _group_listings(
@@ -46,6 +47,7 @@ def _group_listings(
                 first_seen_utc=record.first_seen_utc,
                 last_seen_utc=record.last_seen_utc,
                 disposition=record.disposition,
+                is_current=record.is_current,
             )
             for record in stored
             if record.listing.search_name == name
@@ -97,7 +99,16 @@ def create_app(config_path: Path) -> Flask:
             abort(400)
         current = load_config(app.config["MARKETMON_CONFIG_PATH"])
         with ListingStore(current.database_path) as store:
+            listing_url = store.dashboard_listing_url(listing_id)
+            if disposition == "interested" and listing_url is None:
+                abort(404)
             store.set_disposition(listing_id, disposition)
+        if disposition == "interested":
+            return redirect(listing_url, code=303)
+        if request.headers.get("HX-Request") == "true":
+            response = app.response_class(status=204)
+            response.headers["HX-Refresh"] = "true"
+            return response
         response = redirect(
             url_for(
                 "index",
@@ -106,7 +117,6 @@ def create_app(config_path: Path) -> Flask:
             ),
             code=303,
         )
-        response.headers["HX-Refresh"] = "true"
         return response
 
     return app
