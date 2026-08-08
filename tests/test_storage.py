@@ -37,3 +37,28 @@ def test_store_tracks_initialization_and_pending_items_per_search(tmp_path: Path
         assert store.record(second)
         assert store.cancel_pending_search("FLAIR") == 1
         assert store.pending_listings() == [second]
+
+
+def test_store_persists_listing_disposition_and_cancels_dismissed_pending(
+    tmp_path: Path,
+) -> None:
+    item = Listing("1", "First", "https://example/1", "Flair")
+    path = tmp_path / "listings.db"
+    with ListingStore(path) as store:
+        store.record(item)
+        store.set_disposition("1", "dismissed")
+        assert store.pending_listings() == []
+        assert store.dismissed_listing_ids() == {"1"}
+
+    with ListingStore(path) as store:
+        assert store.dismissed_listing_ids() == {"1"}
+        store.set_disposition("1", None)
+        assert store.dismissed_listing_ids() == set()
+
+
+def test_store_accepts_feedback_for_candidate_not_in_notification_history(
+    tmp_path: Path,
+) -> None:
+    with ListingStore(tmp_path / "listings.db") as store:
+        store.set_disposition("candidate-only", "dismissed")
+        assert store.dismissed_listing_ids() == {"candidate-only"}

@@ -9,6 +9,7 @@ description = "Monitor Facebook Marketplace searches and send notifications for 
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "geopy>=2.4,<3",
     "playwright>=1.54,<2",
     "PyYAML>=6.0,<7",
 ]

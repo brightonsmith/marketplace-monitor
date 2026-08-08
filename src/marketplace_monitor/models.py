@@ -12,6 +12,7 @@ class Listing:
     search_name: str
     price_cents: int | None = None
     location: str | None = None
+    distance_miles: float | None = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class SearchConfig:
     include_any: tuple[str, ...] = field(default_factory=tuple)
     exclude: tuple[str, ...] = field(default_factory=tuple)
     minimum_relevance: float = 0.20
+    max_distance_miles: float | None = None
 
 
 @dataclass(frozen=True)

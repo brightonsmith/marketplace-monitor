@@ -86,6 +86,17 @@ def _relevance_threshold(value: Any, field_name: str) -> float:
     return threshold
 
 
+def _positive_number(value: Any, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{field_name} must be a positive number")
+    number = float(value)
+    if number <= 0:
+        raise ConfigError(f"{field_name} must be positive")
+    return number
+
+
 def _time_to_minutes(value: Any, field_name: str) -> int:
     if not isinstance(value, str):
         raise ConfigError(f"{field_name} must use 24-hour HH:MM format")
@@ -183,6 +194,10 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
                 minimum_relevance=_relevance_threshold(
                     item.get("minimum_relevance", search_defaults.minimum_relevance),
                     f"{prefix}.minimum_relevance",
+                ),
+                max_distance_miles=_positive_number(
+                    item.get("max_distance_miles"),
+                    f"{prefix}.max_distance_miles",
                 ),
             )
         )

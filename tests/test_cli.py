@@ -76,6 +76,15 @@ def test_watch_once_is_explicit_stateful_cycle() -> None:
     assert args.once
 
 
+def test_feedback_command_accepts_durable_dispositions() -> None:
+    args = build_parser().parse_args(
+        ["feedback", "123456", "dismissed", "-c", "active.yaml"]
+    )
+    assert args.listing_id == "123456"
+    assert args.disposition == "dismissed"
+    assert args.config == Path("active.yaml")
+
+
 def test_service_config_works_after_action() -> None:
     args = build_parser().parse_args(
         ["service", "install", "-c", "/tmp/marketmon/config.yaml"]

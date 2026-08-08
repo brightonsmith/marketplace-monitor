@@ -28,6 +28,7 @@ class ListingStore:
             )
             """
         )
+        self._ensure_column("listings", "distance_miles", "REAL")
         self.connection.execute(
             """
             CREATE TABLE IF NOT EXISTS metadata (
@@ -36,7 +37,26 @@ class ListingStore:
             )
             """
         )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS listing_feedback (
+                listing_id TEXT PRIMARY KEY,
+                disposition TEXT NOT NULL,
+                updated_utc TEXT NOT NULL
+            )
+            """
+        )
         self.connection.commit()
+
+    def _ensure_column(self, table: str, name: str, declaration: str) -> None:
+        columns = {
+            row["name"]
+            for row in self.connection.execute(f"PRAGMA table_info({table})")
+        }
+        if name not in columns:
+            self.connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN {name} {declaration}"
+            )
 
     def __enter__(self) -> "ListingStore":
         return self
@@ -108,8 +128,8 @@ class ListingStore:
             """
             INSERT OR IGNORE INTO listings (
                 listing_id, title, url, search_name, price_cents, location,
-                first_seen_utc, last_seen_utc
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                distance_miles, first_seen_utc, last_seen_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 listing.listing_id,
@@ -118,6 +138,7 @@ class ListingStore:
                 listing.search_name,
                 listing.price_cents,
                 listing.location,
+                listing.distance_miles,
                 now,
                 now,
             ),
@@ -128,7 +149,7 @@ class ListingStore:
                 """
                 UPDATE listings
                 SET title = ?, url = ?, search_name = ?, price_cents = ?,
-                    location = ?, last_seen_utc = ?
+                    location = ?, distance_miles = ?, last_seen_utc = ?
                 WHERE listing_id = ?
                 """,
                 (
@@ -137,6 +158,7 @@ class ListingStore:
                     listing.search_name,
                     listing.price_cents,
                     listing.location,
+                    listing.distance_miles,
                     now,
                     listing.listing_id,
                 ),
@@ -162,9 +184,15 @@ class ListingStore:
     def pending_listings(self) -> list[Listing]:
         rows = self.connection.execute(
             """
-            SELECT listing_id, title, url, search_name, price_cents, location
+            SELECT listing_id, title, url, search_name, price_cents, location,
+                   distance_miles
             FROM listings
             WHERE notified_utc IS NULL
+              AND listing_id NOT IN (
+                  SELECT listing_id
+                  FROM listing_feedback
+                  WHERE disposition = 'dismissed'
+              )
             ORDER BY first_seen_utc
             """
         ).fetchall()
@@ -176,6 +204,7 @@ class ListingStore:
                 search_name=row["search_name"],
                 price_cents=row["price_cents"],
                 location=row["location"],
+                distance_miles=row["distance_miles"],
             )
             for row in rows
         ]
@@ -192,3 +221,44 @@ class ListingStore:
         )
         self.connection.commit()
         return cursor.rowcount
+
+    def set_disposition(self, listing_id: str, disposition: str | None) -> None:
+        if disposition not in {None, "interested", "dismissed"}:
+            raise ValueError(f"Unsupported disposition: {disposition}")
+        now = datetime.now(UTC).isoformat()
+        if disposition is None:
+            self.connection.execute(
+                "DELETE FROM listing_feedback WHERE listing_id = ?",
+                (listing_id,),
+            )
+        else:
+            self.connection.execute(
+                """
+                INSERT INTO listing_feedback (listing_id, disposition, updated_utc)
+                VALUES (?, ?, ?)
+                ON CONFLICT(listing_id) DO UPDATE SET
+                    disposition = excluded.disposition,
+                    updated_utc = excluded.updated_utc
+                """,
+                (listing_id, disposition, now),
+            )
+        if disposition == "dismissed":
+            self.connection.execute(
+                """
+                UPDATE listings
+                SET notified_utc = COALESCE(notified_utc, ?)
+                WHERE listing_id = ?
+                """,
+                (now, listing_id),
+            )
+        self.connection.commit()
+
+    def dismissed_listing_ids(self) -> set[str]:
+        rows = self.connection.execute(
+            """
+            SELECT listing_id
+            FROM listing_feedback
+            WHERE disposition = 'dismissed'
+            """
+        ).fetchall()
+        return {row["listing_id"] for row in rows}
