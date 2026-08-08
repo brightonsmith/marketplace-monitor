@@ -6,6 +6,7 @@ import pytest
 from marketplace_monitor.geocoding import (
     Coordinates,
     DistanceFilter,
+    NominatimGeocoder,
     distance_miles,
 )
 
@@ -18,6 +19,10 @@ class FakeGeocoder:
     def geocode(self, location: str) -> Coordinates | None:
         self.calls.append(location)
         return self.results[location]
+
+
+def test_nominatim_geocoder_can_be_constructed() -> None:
+    NominatimGeocoder()
 
 
 def test_distance_miles_uses_great_circle_distance() -> None:

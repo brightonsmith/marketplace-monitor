@@ -61,6 +61,7 @@ class NominatimGeocoder:
         self._geocode = RateLimiter(
             client.geocode,
             min_delay_seconds=15,
+            error_wait_seconds=15,
             swallow_exceptions=False,
         )
 
