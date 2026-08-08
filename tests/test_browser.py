@@ -253,3 +253,68 @@ def test_fetch_listings_filters_locally_before_geocoding(monkeypatch, tmp_path) 
 
     assert [listing.listing_id for listing in listings] == ["1"]
     assert distance_filter.locations == ["Aurora, CO"]
+
+
+def test_fetch_listings_ranks_candidates_then_stops_at_distance_limit(
+    monkeypatch, tmp_path
+) -> None:
+    page = FakePage("about:blank")
+    context = FakeContext(page)
+    playwright = FakePlaywright()
+
+    async def fake_open_context(_config):
+        return playwright, context
+
+    async def fake_extract_origin(_page):
+        return "Denver, Colorado"
+
+    async def fake_extract_cards(_page):
+        return [
+            {
+                "href": "https://facebook.com/marketplace/item/1",
+                "text": "$400\nFlair 58 Espresso Maker\nCasper, WY",
+            },
+            {
+                "href": "https://facebook.com/marketplace/item/2",
+                "text": "$350\nBreville Espresso Machine\nAurora, CO",
+            },
+            {
+                "href": "https://facebook.com/marketplace/item/3",
+                "text": "$300\nCoffee Maker\nDenver, CO",
+            },
+        ]
+
+    class FakeDistanceFilter:
+        def __init__(self):
+            self.locations = []
+
+        async def distance_between(self, _origin, location):
+            self.locations.append(location)
+            return {"Casper, WY": 280.0, "Aurora, CO": 12.0}[location]
+
+    distance_filter = FakeDistanceFilter()
+    monkeypatch.setattr(browser_module, "_open_context", fake_open_context)
+    monkeypatch.setattr(browser_module, "_extract_search_origin", fake_extract_origin)
+    monkeypatch.setattr(browser_module, "_extract_cards", fake_extract_cards)
+    search = browser_module.SearchConfig(
+        "Flair",
+        "https://facebook.com/marketplace/denver/search?query=flair",
+        include_any=("flair 58",),
+        exclude=("coffee maker",),
+        max_distance_miles=50,
+    )
+
+    listings = asyncio.run(
+        browser_module.fetch_listings(
+            browser_module.BrowserConfig(
+                profile_dir=tmp_path / "profile",
+                scroll_count=0,
+            ),
+            (search,),
+            distance_filter=distance_filter,
+            distance_result_limit=1,
+        )
+    )
+
+    assert [listing.listing_id for listing in listings] == ["2"]
+    assert distance_filter.locations == ["Casper, WY", "Aurora, CO"]
