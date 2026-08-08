@@ -11,6 +11,7 @@ from pathlib import Path
 from .config import load_config
 
 SERVICE_NAME = "marketmon.service"
+DASHBOARD_SERVICE_NAME = "marketmon-dashboard.service"
 
 
 class ServiceError(RuntimeError):
@@ -53,8 +54,8 @@ def _unit_path(value: str | Path) -> str:
     return "".join(escaped)
 
 
-def service_path() -> Path:
-    return Path.home() / ".config/systemd/user" / SERVICE_NAME
+def service_path(service_name: str = SERVICE_NAME) -> Path:
+    return Path.home() / ".config/systemd/user" / service_name
 
 
 def unit_text(config_path: str | Path) -> str:
@@ -81,6 +82,29 @@ WantedBy=default.target
 """
 
 
+def dashboard_unit_text(config_path: str | Path) -> str:
+    config = Path(config_path).expanduser().resolve()
+    executable = Path(sys.executable).absolute()
+    environment_file = config.parent / "environment"
+    return f"""[Unit]
+Description=Marketmon Dashboard
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={_unit_path(config.parent)}
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-{_unit_path(environment_file)}
+ExecStart={_quote(executable)} -m marketplace_monitor.cli dashboard -c {_quote(config)} --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+"""
+
+
 def install_service(config_path: str | Path) -> Path:
     _require_systemd()
     config = Path(config_path).expanduser().resolve()
@@ -96,16 +120,32 @@ def install_service(config_path: str | Path) -> Path:
         )
 
     destination = service_path()
+    dashboard_destination = service_path(DASHBOARD_SERVICE_NAME)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(unit_text(config), encoding="utf-8")
+    dashboard_destination.write_text(dashboard_unit_text(config), encoding="utf-8")
     _run("systemctl", "--user", "daemon-reload")
-    _run("systemctl", "--user", "enable", "--now", SERVICE_NAME)
+    _run(
+        "systemctl",
+        "--user",
+        "enable",
+        "--now",
+        SERVICE_NAME,
+        DASHBOARD_SERVICE_NAME,
+    )
     return destination
 
 
 def service_status() -> None:
     _require_systemd()
-    _run("systemctl", "--user", "status", SERVICE_NAME, "--no-pager")
+    _run(
+        "systemctl",
+        "--user",
+        "status",
+        SERVICE_NAME,
+        DASHBOARD_SERVICE_NAME,
+        "--no-pager",
+    )
 
 
 def service_logs(*, follow: bool = False) -> None:
@@ -113,7 +153,13 @@ def service_logs(*, follow: bool = False) -> None:
     # Do not use --user here. It only reads per-user journals and therefore
     # requires persistent journaling, which Raspberry Pi OS does not enable by
     # default. --user-unit filters all journals visible to the current user.
-    args = ["journalctl", f"--user-unit={SERVICE_NAME}", "-n", "100"]
+    args = [
+        "journalctl",
+        f"--user-unit={SERVICE_NAME}",
+        f"--user-unit={DASHBOARD_SERVICE_NAME}",
+        "-n",
+        "100",
+    ]
     if follow:
         args.append("--follow")
     else:
@@ -123,13 +169,28 @@ def service_logs(*, follow: bool = False) -> None:
 
 def restart_service() -> None:
     _require_systemd()
-    _run("systemctl", "--user", "restart", SERVICE_NAME)
+    _run(
+        "systemctl",
+        "--user",
+        "restart",
+        SERVICE_NAME,
+        DASHBOARD_SERVICE_NAME,
+    )
 
 
 def uninstall_service() -> None:
     _require_systemd()
-    _run("systemctl", "--user", "disable", "--now", SERVICE_NAME, check=False)
+    _run(
+        "systemctl",
+        "--user",
+        "disable",
+        "--now",
+        SERVICE_NAME,
+        DASHBOARD_SERVICE_NAME,
+        check=False,
+    )
     service_path().unlink(missing_ok=True)
+    service_path(DASHBOARD_SERVICE_NAME).unlink(missing_ok=True)
     _run("systemctl", "--user", "daemon-reload")
 
 
