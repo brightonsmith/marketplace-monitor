@@ -190,3 +190,66 @@ def test_fetch_listings_applies_hard_radius_before_returning(
     assert listings[0].distance_miles == 12.0
     assert context.closed
     assert playwright.stopped
+
+
+def test_fetch_listings_filters_locally_before_geocoding(monkeypatch, tmp_path) -> None:
+    page = FakePage("about:blank")
+    context = FakeContext(page)
+    playwright = FakePlaywright()
+
+    async def fake_open_context(_config):
+        return playwright, context
+
+    async def fake_extract_origin(_page):
+        return "Denver, Colorado"
+
+    async def fake_extract_cards(_page):
+        return [
+            {
+                "href": "https://facebook.com/marketplace/item/1",
+                "text": "$400\nFlair 58\nAurora, CO",
+            },
+            {
+                "href": "https://facebook.com/marketplace/item/2",
+                "text": "$350\nUnrelated espresso machine\nCasper, WY",
+            },
+        ]
+
+    class FakeDistanceFilter:
+        def __init__(self):
+            self.locations = []
+
+        async def distance_between(self, _origin, location):
+            self.locations.append(location)
+            return 12.0
+
+    distance_filter = FakeDistanceFilter()
+    monkeypatch.setattr(browser_module, "_open_context", fake_open_context)
+    monkeypatch.setattr(browser_module, "_extract_search_origin", fake_extract_origin)
+    monkeypatch.setattr(browser_module, "_extract_cards", fake_extract_cards)
+    search = browser_module.SearchConfig(
+        "Flair",
+        "https://facebook.com/marketplace/denver/search?query=flair",
+        include_any=("flair 58",),
+        max_distance_miles=40,
+    )
+
+    listings = asyncio.run(
+        browser_module.fetch_listings(
+            browser_module.BrowserConfig(
+                profile_dir=tmp_path / "profile",
+                scroll_count=0,
+            ),
+            (search,),
+            distance_filter=distance_filter,
+            pre_distance_filter=lambda listing, configured_search: (
+                any(
+                    phrase in listing.title.casefold()
+                    for phrase in configured_search.include_any
+                )
+            ),
+        )
+    )
+
+    assert [listing.listing_id for listing in listings] == ["1"]
+    assert distance_filter.locations == ["Aurora, CO"]

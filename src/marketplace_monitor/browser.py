@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 from urllib.parse import urlsplit
 
 from playwright.async_api import (
@@ -146,6 +147,7 @@ async def fetch_listings(
     searches: tuple[SearchConfig, ...],
     *,
     distance_filter: DistanceFilter | None = None,
+    pre_distance_filter: Callable[[Listing, SearchConfig], bool] | None = None,
 ) -> list[Listing]:
     if not searches:
         return []
@@ -175,6 +177,10 @@ async def fetch_listings(
             for card in cards:
                 listing = listing_from_card(card, search)
                 if listing is None:
+                    continue
+                if pre_distance_filter is not None and not pre_distance_filter(
+                    listing, search
+                ):
                     continue
                 if search.max_distance_miles is not None:
                     if not listing.location:

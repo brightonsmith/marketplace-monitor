@@ -32,6 +32,7 @@ from .config_manager import (
 )
 from .models import SearchConfig
 from .geocoding import DistanceFilter
+from .parser import matches_search
 from .monitor import run_once, send_authentication_alert, watch
 from .notifier import build_notifier, format_price
 from .report import format_report
@@ -579,7 +580,7 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
                 print("Facebook session is valid. No active searches.")
                 return
             distance_filter = (
-                DistanceFilter(config.database_path)
+                DistanceFilter(config.database_path, min_delay_seconds=1.0)
                 if any(
                     search.max_distance_miles is not None
                     for search in selected_searches
@@ -597,6 +598,7 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
                         config.browser,
                         selected_searches,
                         distance_filter=distance_filter,
+                        pre_distance_filter=matches_search,
                     )
             finally:
                 if distance_filter is not None:

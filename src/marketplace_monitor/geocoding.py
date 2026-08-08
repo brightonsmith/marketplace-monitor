@@ -47,7 +47,7 @@ def distance_miles(first: Coordinates, second: Coordinates) -> float:
 class NominatimGeocoder:
     """Low-volume, rate-limited place lookup backed by OpenStreetMap."""
 
-    def __init__(self) -> None:
+    def __init__(self, min_delay_seconds: float = 15.0) -> None:
         client = Nominatim(
             domain=os.getenv(
                 "MARKETMON_GEOCODER_DOMAIN",
@@ -60,8 +60,8 @@ class NominatimGeocoder:
         )
         self._geocode = RateLimiter(
             client.geocode,
-            min_delay_seconds=15,
-            error_wait_seconds=15,
+            min_delay_seconds=min_delay_seconds,
+            error_wait_seconds=max(5.0, min_delay_seconds),
             swallow_exceptions=False,
         )
 
@@ -131,9 +131,11 @@ class DistanceFilter:
         self,
         database_path: Path,
         geocoder: Geocoder | None = None,
+        *,
+        min_delay_seconds: float = 15.0,
     ) -> None:
         self.cache = GeocodeCache(database_path)
-        self.geocoder = geocoder or NominatimGeocoder()
+        self.geocoder = geocoder or NominatimGeocoder(min_delay_seconds)
 
     def close(self) -> None:
         self.cache.close()

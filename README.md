@@ -143,11 +143,13 @@ max_distance_miles: 40
 
 Marketmon reads the selected search center from Facebook's location control, so
 the origin is not duplicated in configuration. It geocodes Facebook's displayed
-listing city, caches successful lookups in SQLite, and excludes unresolved or
-out-of-radius listings. Distance is therefore city-center approximate. The first
-uncached cycle can be slow because the public Nominatim service is deliberately
-limited to four lookups per minute; subsequent cycles use the cache. Geocoding
-data is © OpenStreetMap contributors and is subject to the Nominatim usage policy.
+listing city and excludes unresolved or out-of-radius listings. Distance is
+therefore city-center approximate. Title, price, and exclusion checks happen
+before geocoding, and successful lookups are cached in SQLite. An interactive
+`marketmon check` is limited to one uncached lookup per second; autonomous
+monitoring uses the stricter four-lookups-per-minute limit for regular scripts.
+Geocoding data is © OpenStreetMap contributors and is subject to the Nominatim
+usage policy.
 Set `MARKETMON_GEOCODER_DOMAIN` to switch to a compatible Nominatim provider or
 self-hosted instance without changing Marketmon.
 
