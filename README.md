@@ -18,14 +18,32 @@ marketmon add [SEARCH.yaml]             add a search interactively or from YAML
 marketmon list                          list active searches
 marketmon remove "SEARCH NAME"          remove a search
 marketmon feedback LISTING_ID STATE      save interested/dismissed feedback
-marketmon check [-n COUNT] [-s NAME]    inspect current results without side effects
+marketmon check [-n COUNT] [-s NAME]    inspect results without notifications/history changes
+marketmon dashboard                     serve the local results dashboard
 marketmon watch [--once]                run real monitoring cycles
 marketmon service ACTION                manage autonomous Linux operation
 ```
 
-`check` never changes notification history or sends listing alerts. `watch --once`
+`check` never changes notification history or sends listing alerts. It only
+refreshes the separate dashboard snapshot. `watch --once`
 performs one real cycle, including baselining, deduplication, quiet hours, and
 eligible notifications. `watch` repeats those cycles continuously.
+
+`check` refreshes a separate dashboard snapshot containing candidate titles,
+prices, images, locations, distances, and ranking details. This snapshot never
+participates in notification deduplication.
+
+Launch the dashboard after a check:
+
+```bash
+marketmon check
+marketmon dashboard
+```
+
+Open `http://localhost:8000`. To expose it on a private Pi network, bind it
+explicitly with `marketmon dashboard --host 0.0.0.0` and use the Pi's private
+address. The dashboard includes active, interested, and dismissed views,
+per-search result limits, feedback controls, and recent monitoring diagnostics.
 
 `-c/--config` may appear before or after a top-level command. Relative browser
 profile and database paths are resolved from the configuration file's directory.

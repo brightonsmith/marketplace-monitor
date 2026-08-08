@@ -70,6 +70,16 @@ def test_check_is_read_only_report_command() -> None:
     assert args.config == Path("active.yaml")
 
 
+def test_dashboard_command_accepts_local_server_options() -> None:
+    args = build_parser().parse_args(
+        ["dashboard", "--host", "0.0.0.0", "--port", "8080", "-c", "active.yaml"]
+    )
+    assert args.command == "dashboard"
+    assert args.host == "0.0.0.0"
+    assert args.port == 8080
+    assert args.config == Path("active.yaml")
+
+
 def test_watch_once_is_explicit_stateful_cycle() -> None:
     args = build_parser().parse_args(["watch", "--once"])
     assert args.command == "watch"

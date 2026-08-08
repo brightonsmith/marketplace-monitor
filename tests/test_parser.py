@@ -21,6 +21,7 @@ def test_listing_from_card() -> None:
         {
             "href": "https://www.facebook.com/marketplace/item/123456/?tracking=abc",
             "text": "$425\nFlair 58 Plus\nDenver, Colorado",
+            "image_url": "https://example.test/flair.jpg",
         },
         search,
     )
@@ -30,6 +31,7 @@ def test_listing_from_card() -> None:
     assert listing.price_cents == 42_500
     assert listing.location == "Denver, Colorado"
     assert listing.url == "https://www.facebook.com/marketplace/item/123456"
+    assert listing.image_url == "https://example.test/flair.jpg"
 
 
 def test_listing_from_discounted_card_skips_original_price() -> None:

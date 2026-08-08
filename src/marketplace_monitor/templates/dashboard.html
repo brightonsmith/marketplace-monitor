@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Marketmon</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  </head>
+  <body>
+    <header class="container dashboard-header">
+      <div>
+        <p class="eyebrow">Facebook Marketplace</p>
+        <h1>Marketmon</h1>
+      </div>
+      <form method="get" class="limit-control">
+        <input type="hidden" name="view" value="{{ view }}">
+        <label for="limit">Listings per search</label>
+        <select id="limit" name="limit" onchange="this.form.submit()">
+          {% for option in (5, 10, 25, 50) %}
+            <option value="{{ option }}" {% if option == limit %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </header>
+
+    <main class="container">
+      <nav class="views" aria-label="Listing views">
+        <a href="{{ url_for('index', view='active', limit=limit) }}" {% if view == 'active' %}aria-current="page"{% endif %}>Active <span>{{ counts.active }}</span></a>
+        <a href="{{ url_for('index', view='interested', limit=limit) }}" {% if view == 'interested' %}aria-current="page"{% endif %}>Interested <span>{{ counts.interested }}</span></a>
+        <a href="{{ url_for('index', view='dismissed', limit=limit) }}" {% if view == 'dismissed' %}aria-current="page"{% endif %}>Dismissed <span>{{ counts.dismissed }}</span></a>
+      </nav>
+
+      {% if recent_runs %}
+        <details class="diagnostics">
+          <summary>Recent monitoring runs</summary>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Completed</th><th>Found</th><th>Matched</th><th>New</th><th>Notified</th><th>Held</th><th>Dismissed</th></tr></thead>
+              <tbody>
+                {% for run in recent_runs %}
+                  <tr><td>{{ run.completed_utc[:19].replace('T', ' ') }} UTC</td><td>{{ run.discovered }}</td><td>{{ run.matched }}</td><td>{{ run.new }}</td><td>{{ run.notified }}</td><td>{{ run.held }}</td><td>{{ run.dismissed }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      {% endif %}
+
+      {% for search_name, records in groups %}
+        <section class="search-group">
+          <div class="section-heading">
+            <h2>{{ search_name }}</h2>
+            <span>{{ records|length }} shown</span>
+          </div>
+          {% if records %}
+            <div class="listing-grid">
+              {% for record in records %}
+                {% set listing = record.candidate.listing %}
+                <article class="listing-card">
+                  {% if listing.image_url %}<a href="{{ listing.url }}" target="_blank" rel="noreferrer" class="image-link"><img src="{{ listing.image_url }}" alt="{{ listing.title }}" loading="lazy"></a>{% else %}<div class="image-placeholder">No image available</div>{% endif %}
+                  <div class="card-topline">
+                    <span class="price">{{ listing.price_cents|price }}</span>
+                    {% if listing.distance_miles is not none %}<span>{{ '%.1f'|format(listing.distance_miles) }} mi</span>{% endif %}
+                  </div>
+                  <h3><a href="{{ listing.url }}" target="_blank" rel="noreferrer">{{ listing.title }}</a></h3>
+                  <p class="location">{{ listing.location or 'Location unavailable' }}</p>
+                  <p class="ranking"><span class="badge">{{ 'Exact match' if record.candidate.exact else 'Candidate' }}</span> {{ '%.0f'|format(record.candidate.relevance * 100) }}% match · {{ '%.0f'|format(record.candidate.score * 100) }}% score</p>
+                  <p class="listing-id">ID {{ listing.listing_id }}</p>
+                  <p class="seen">First seen {{ record.first_seen_utc[:10] }} · Last seen {{ record.last_seen_utc[:19].replace('T', ' ') }} UTC</p>
+                  <div class="actions">
+                    <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}" hx-post="{{ url_for('feedback', listing_id=listing.listing_id) }}">
+                      <input type="hidden" name="view" value="{{ view }}">
+                      <input type="hidden" name="limit" value="{{ limit }}">
+                      <button type="submit" name="disposition" value="interested" class="secondary" {% if record.disposition == 'interested' %}aria-pressed="true"{% endif %}>Interested</button>
+                      <button type="submit" name="disposition" value="dismissed" class="outline contrast">Dismiss</button>
+                      {% if record.disposition %}<button type="submit" name="disposition" value="clear" class="outline secondary">Clear</button>{% endif %}
+                    </form>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <article class="empty">No {{ view }} listings stored for this search.</article>
+          {% endif %}
+        </section>
+      {% else %}
+        <article class="empty">No active searches are configured.</article>
+      {% endfor %}
+    </main>
+  </body>
+</html>

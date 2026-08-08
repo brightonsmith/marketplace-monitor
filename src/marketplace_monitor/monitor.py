@@ -137,7 +137,7 @@ async def run_once(
             store.mark_search_initialized(search_name)
         store.mark_initialized()
 
-    return RunSummary(
+    summary = RunSummary(
         discovered=len(listings),
         matched=len(matched),
         new=new_count,
@@ -151,6 +151,22 @@ async def run_once(
         ),
         dismissed=dismissed_count,
     )
+    ranked = [
+        candidate
+        for candidate in rank_listings(visible_listings, searches)
+        if not candidate.excluded
+    ]
+    with ListingStore(config.database_path) as store:
+        store.replace_dashboard_candidates(search_names, ranked)
+        store.record_run(
+            discovered=summary.discovered,
+            matched=summary.matched,
+            new=summary.new,
+            notified=summary.notified,
+            held=summary.held,
+            dismissed=summary.dismissed,
+        )
+    return summary
 
 
 def maybe_send_status(

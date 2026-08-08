@@ -36,6 +36,7 @@ from .parser import matches_search
 from .monitor import run_once, send_authentication_alert, watch
 from .notifier import build_notifier, format_price
 from .report import format_report
+from .ranking import rank_listings
 from .service import (
     ServiceError,
     install_service,
@@ -162,6 +163,17 @@ def build_parser() -> argparse.ArgumentParser:
     _config_argument(check_parser, subcommand=True)
     check_parser.add_argument(
         "-n", "--limit", type=int, default=10, help="listings to show (default: 10)"
+    )
+
+    dashboard_parser = subparsers.add_parser(
+        "dashboard", help="serve the local Marketplace dashboard"
+    )
+    _config_argument(dashboard_parser, subcommand=True)
+    dashboard_parser.add_argument(
+        "--host", default="127.0.0.1", help="address to bind (default: 127.0.0.1)"
+    )
+    dashboard_parser.add_argument(
+        "--port", type=int, default=8000, help="port to bind (default: 8000)"
     )
     check_parser.add_argument(
         "-s",
@@ -605,6 +617,18 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
                     distance_filter.close()
             with ListingStore(config.database_path) as store:
                 dismissed_ids = store.dismissed_listing_ids()
+                ranked = [
+                    candidate
+                    for candidate in rank_listings(
+                        listings,
+                        {search.name: search for search in selected_searches},
+                    )
+                    if not candidate.excluded
+                ]
+                store.replace_dashboard_candidates(
+                    tuple(search.name for search in selected_searches),
+                    ranked,
+                )
             listings = [
                 listing
                 for listing in listings
@@ -698,6 +722,13 @@ def _run_management_command(args: argparse.Namespace) -> bool:
         with ListingStore(config.database_path) as store:
             store.set_disposition(args.listing_id, disposition)
         print(f"Listing {args.listing_id}: {args.disposition}")
+        return True
+    if args.command == "dashboard":
+        if not 1 <= args.port <= 65535:
+            raise ConfigError("dashboard port must be between 1 and 65535")
+        from .dashboard import run_dashboard
+
+        run_dashboard(args.config, host=args.host, port=args.port)
         return True
     if args.command == "service":
         _run_service_command(args)

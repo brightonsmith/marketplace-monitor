@@ -13,6 +13,7 @@ class Listing:
     price_cents: int | None = None
     location: str | None = None
     distance_miles: float | None = None
+    image_url: str | None = None
 
 
 @dataclass(frozen=True)

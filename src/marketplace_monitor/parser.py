@@ -180,6 +180,7 @@ def listing_from_card(card: dict[str, str], search: SearchConfig) -> Listing | N
         search_name=search.name,
         price_cents=price_cents,
         location=location,
+        image_url=card.get("image_url") or None,
     )
 
 

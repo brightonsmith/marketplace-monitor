@@ -30,7 +30,12 @@ anchors => anchors.map(anchor => {
       bestText = candidate;
     }
   }
-  return { href: anchor.href, text: bestText };
+  const image = anchor.querySelector('img') || node.querySelector('img');
+  return {
+    href: anchor.href,
+    text: bestText,
+    image_url: image ? (image.currentSrc || image.src || null) : null
+  };
 })
 """
 
