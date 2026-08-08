@@ -497,3 +497,31 @@ def test_dismissed_listing_is_omitted_from_status_and_notifications(
     assert summary.matched == 0
     assert summary.notified == 0
     assert summary.status.listing is None
+
+
+def test_dashboard_snapshot_exists_before_notification(tmp_path: Path, monkeypatch) -> None:
+    item = listing("1")
+
+    async def fake_fetch(*_args):
+        return [item]
+
+    class SnapshotCheckingNotifier(RecordingNotifier):
+        def send(self, sent: Listing) -> None:
+            with ListingStore(config.database_path) as store:
+                assert store.dashboard_listing(sent.listing_id) is not None
+            super().send(sent)
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    base = make_config(tmp_path)
+    config = AppConfig(
+        browser=base.browser,
+        database_path=base.database_path,
+        check_interval_minutes=base.check_interval_minutes,
+        notify_on_first_run=True,
+        notifications=base.notifications,
+        searches=base.searches,
+    )
+
+    notifier = SnapshotCheckingNotifier()
+    summary = asyncio.run(monitor_module.run_once(config, notifier))
+    assert summary.notified == 1
