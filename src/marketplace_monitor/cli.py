@@ -598,7 +598,7 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
                         config.browser,
                         selected_searches,
                         distance_filter=distance_filter,
-                        pre_distance_filter=matches_search,
+                        distance_result_limit=args.limit,
                     )
             finally:
                 if distance_filter is not None:
