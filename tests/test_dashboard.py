@@ -59,7 +59,12 @@ def test_dashboard_renders_rich_listing_and_updates_feedback(tmp_path: Path) -> 
         data={"disposition": "interested", "view": "active", "limit": "10"},
     )
     assert response.status_code == 303
-    assert response.headers["Location"] == "https://example.test/listing"
+    assert response.headers["Location"] == "/listings/123"
+    detail = client.get("/listings/123")
+    assert detail.status_code == 200
+    assert b"Flair 58 Plus" in detail.data
+    assert b"Open Facebook" in detail.data
+    assert b"https://example.test/listing" in detail.data
     interested = client.get("/?view=interested&limit=10")
     assert b"Flair 58 Plus" in interested.data
 
@@ -95,3 +100,4 @@ def test_dashboard_rejects_invalid_view_and_limit(tmp_path: Path) -> None:
     client = create_app(config).test_client()
     assert client.get("/?view=unknown").status_code == 404
     assert client.get("/?limit=11").status_code == 400
+    assert client.get("/listings/does-not-exist").status_code == 404
