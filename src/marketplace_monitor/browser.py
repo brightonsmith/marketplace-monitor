@@ -16,6 +16,7 @@ from playwright.async_api import (
 from .geocoding import DistanceFilter, GeocodingError
 from .models import BrowserConfig, Listing, SearchConfig
 from .parser import listing_from_card
+from .ranking import rank_listings
 
 CARD_SCRIPT = """
 anchors => anchors.map(anchor => {
@@ -148,6 +149,7 @@ async def fetch_listings(
     *,
     distance_filter: DistanceFilter | None = None,
     pre_distance_filter: Callable[[Listing, SearchConfig], bool] | None = None,
+    distance_result_limit: int | None = None,
 ) -> list[Listing]:
     if not searches:
         return []
@@ -174,6 +176,7 @@ async def fetch_listings(
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(1_000)
             cards = await _extract_cards(page)
+            search_listings: list[Listing] = []
             for card in cards:
                 listing = listing_from_card(card, search)
                 if listing is None:
@@ -182,6 +185,22 @@ async def fetch_listings(
                     listing, search
                 ):
                     continue
+                search_listings.append(listing)
+
+            if distance_result_limit is not None:
+                if distance_result_limit < 1:
+                    raise ValueError("distance_result_limit must be positive")
+                search_listings = [
+                    candidate.listing
+                    for candidate in rank_listings(
+                        search_listings,
+                        {search.name: search},
+                    )
+                    if not candidate.excluded
+                ]
+
+            accepted_for_search = 0
+            for listing in search_listings:
                 if search.max_distance_miles is not None:
                     if not listing.location:
                         continue
@@ -193,6 +212,13 @@ async def fetch_listings(
                         continue
                     listing = replace(listing, distance_miles=distance)
                 listings.setdefault(listing.listing_id, listing)
+                accepted_for_search += 1
+                if (
+                    search.max_distance_miles is not None
+                    and distance_result_limit is not None
+                    and accepted_for_search >= distance_result_limit
+                ):
+                    break
     finally:
         await context.close()
         await playwright.stop()
