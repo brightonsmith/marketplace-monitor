@@ -413,6 +413,48 @@ class ListingStore:
         ).fetchone()
         return row["url"] if row else None
 
+    def dashboard_listing(self, listing_id: str) -> StoredCandidate | None:
+        """Return the latest stored dashboard record for one listing."""
+        row = self.connection.execute(
+            """
+            SELECT candidates.listing_id, candidates.title, candidates.url,
+                   candidates.search_name, candidates.price_cents,
+                   candidates.location, candidates.distance_miles,
+                   candidates.image_url, candidates.relevance, candidates.score,
+                   candidates.exact, candidates.first_seen_utc,
+                   candidates.last_seen_utc, feedback.disposition,
+                   candidates.is_current
+            FROM dashboard_candidates AS candidates
+            LEFT JOIN listing_feedback AS feedback
+              ON feedback.listing_id = candidates.listing_id
+            WHERE candidates.listing_id = ?
+            ORDER BY candidates.last_seen_utc DESC
+            LIMIT 1
+            """,
+            (listing_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return StoredCandidate(
+            listing=Listing(
+                listing_id=row["listing_id"],
+                title=row["title"],
+                url=row["url"],
+                search_name=row["search_name"],
+                price_cents=row["price_cents"],
+                location=row["location"],
+                distance_miles=row["distance_miles"],
+                image_url=row["image_url"],
+            ),
+            relevance=row["relevance"],
+            score=row["score"],
+            exact=bool(row["exact"]),
+            first_seen_utc=row["first_seen_utc"],
+            last_seen_utc=row["last_seen_utc"],
+            disposition=row["disposition"],
+            is_current=bool(row["is_current"]),
+        )
+
     def dashboard_listings(self, view: str = "active") -> list[StoredCandidate]:
         """Return current candidate snapshots and feedback for the dashboard."""
         if view not in {"active", "interested", "dismissed"}:
