@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 from abc import ABC, abstractmethod
+from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -90,22 +93,46 @@ class ConsoleNotifier(Notifier):
 
 
 class NtfyNotifier(Notifier):
-    def __init__(self, server: str, topic: str, access_token: str | None = None):
+    def __init__(
+        self,
+        server: str,
+        topic: str,
+        access_token: str | None = None,
+        dashboard_url: str | None = None,
+    ):
         self.server = server.rstrip("/")
         self.topic = topic
         self.endpoint = f"{self.server}/{topic}"
         self.access_token = access_token
+        self.dashboard_url = (
+            dashboard_url or os.getenv("MARKETMON_DASHBOARD_URL") or _tailscale_url()
+        )
 
     def send(self, listing: Listing) -> None:
         location = f"\n{listing.location}" if listing.location else ""
         body = f"{format_price(listing.price_cents)}{location}\n{listing.search_name}"
-        payload = {
+        dashboard_listing_url = (
+            f"{self.dashboard_url.rstrip('/')}/listings/"
+            f"{quote(listing.listing_id, safe='')}"
+            if self.dashboard_url
+            else None
+        )
+        payload: dict[str, object] = {
             "topic": self.topic,
             "title": listing.title,
             "message": body,
-            "click": listing.url,
+            "click": dashboard_listing_url or listing.url,
             "tags": ["shopping_cart"],
         }
+        if dashboard_listing_url:
+            payload["actions"] = [
+                {
+                    "action": "view",
+                    "label": "Open Facebook",
+                    "url": listing.url,
+                    "clear": True,
+                }
+            ]
         self._send_payload(payload)
 
     def send_status(self, status: StatusUpdate, *, startup: bool = False) -> None:
@@ -157,3 +184,26 @@ def build_notifier(config: NotificationConfig) -> Notifier:
         topic=config.ntfy.topic,
         access_token=os.getenv("NTFY_ACCESS_TOKEN"),
     )
+
+
+def _tailscale_url(port: int = 8000) -> str | None:
+    """Return this machine's stable Tailscale dashboard URL when available."""
+    if shutil.which("tailscale") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ("tailscale", "status", "--json"),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return None
+    self_status = status.get("Self") or {}
+    hostname = str(self_status.get("DNSName") or "").rstrip(".")
+    if not hostname:
+        addresses = self_status.get("TailscaleIPs") or []
+        hostname = next((str(value) for value in addresses if ":" not in str(value)), "")
+    return f"http://{hostname}:{port}" if hostname else None

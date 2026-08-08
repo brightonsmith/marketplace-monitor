@@ -666,7 +666,7 @@ async def _run_browser_command(args: argparse.Namespace) -> None:
 def _run_service_command(args: argparse.Namespace) -> None:
     if args.service_command == "install":
         destination = install_service(args.config)
-        print(f"Installed and started {destination}")
+        print(f"Installed and started watcher and dashboard ({destination.parent})")
         print("Enable startup before login once with:")
         print(f"  {linger_command()}")
     elif args.service_command == "status":
@@ -678,7 +678,7 @@ def _run_service_command(args: argparse.Namespace) -> None:
         print("Restarted marketmon.service")
     else:
         uninstall_service()
-        print("Stopped and removed marketmon.service")
+        print("Stopped and removed Marketmon watcher and dashboard services")
 
 
 def _run_management_command(args: argparse.Namespace) -> bool:

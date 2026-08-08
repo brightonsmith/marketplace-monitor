@@ -91,6 +91,28 @@ def create_app(config_path: Path) -> Flask:
             recent_runs=recent_runs,
         )
 
+    @app.get("/listings/<listing_id>")
+    def listing_detail(listing_id: str):
+        current = load_config(app.config["MARKETMON_CONFIG_PATH"])
+        with ListingStore(current.database_path) as store:
+            record = store.dashboard_listing(listing_id)
+        if record is None:
+            abort(404)
+        listing = DashboardListing(
+            candidate=RankedListing(
+                listing=record.listing,
+                relevance=record.relevance,
+                score=record.score,
+                exact=record.exact,
+                excluded=False,
+            ),
+            first_seen_utc=record.first_seen_utc,
+            last_seen_utc=record.last_seen_utc,
+            disposition=record.disposition,
+            is_current=record.is_current,
+        )
+        return render_template("listing.html", record=listing)
+
     @app.post("/listings/<listing_id>/feedback")
     def feedback(listing_id: str):
         disposition_value = request.form.get("disposition", "")
@@ -104,7 +126,7 @@ def create_app(config_path: Path) -> Flask:
                 abort(404)
             store.set_disposition(listing_id, disposition)
         if disposition == "interested":
-            return redirect(listing_url, code=303)
+            return redirect(url_for("listing_detail", listing_id=listing_id), code=303)
         if request.headers.get("HX-Request") == "true":
             response = app.response_class(status=204)
             response.headers["HX-Refresh"] = "true"

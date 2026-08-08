@@ -67,3 +67,67 @@ def test_ntfy_authentication_error_is_high_priority(monkeypatch) -> None:
         "priority": 5,
         "tags": ["warning"],
     }
+
+
+def test_ntfy_listing_opens_dashboard_with_separate_facebook_action(monkeypatch) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["payload"] = json.loads(request.data)
+        return FakeResponse()
+
+    monkeypatch.setattr(notifier_module, "urlopen", fake_urlopen)
+    listing = Listing(
+        "123",
+        "Flair 58 Plus",
+        "https://www.facebook.com/marketplace/item/123",
+        "Flair 58 Plus",
+        42_500,
+        "Denver, CO",
+    )
+    notifier = NtfyNotifier(
+        "https://ntfy.sh",
+        "example-topic",
+        dashboard_url="http://marketplace-pi.example.ts.net:8000",
+    )
+
+    notifier.send(listing)
+
+    assert captured["payload"]["message"] == "$425.00\nDenver, CO\nFlair 58 Plus"
+    assert captured["payload"]["click"] == (
+        "http://marketplace-pi.example.ts.net:8000/listings/123"
+    )
+    assert captured["payload"]["actions"] == [
+        {
+            "action": "view",
+            "label": "Open Facebook",
+            "url": listing.url,
+            "clear": True,
+        }
+    ]
+
+
+def test_tailscale_url_prefers_magicdns_name(monkeypatch) -> None:
+    monkeypatch.setattr(notifier_module.shutil, "which", lambda _name: "/usr/bin/tailscale")
+    monkeypatch.setattr(
+        notifier_module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: type(
+            "Result",
+            (),
+            {
+                "stdout": json.dumps(
+                    {
+                        "Self": {
+                            "DNSName": "marketplace-pi.example.ts.net.",
+                            "TailscaleIPs": ["100.64.0.1"],
+                        }
+                    }
+                )
+            },
+        )(),
+    )
+
+    assert notifier_module._tailscale_url() == (
+        "http://marketplace-pi.example.ts.net:8000"
+    )

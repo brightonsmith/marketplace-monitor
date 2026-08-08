@@ -99,12 +99,21 @@ async def run_once(
             for listing in visible_listings
             if matches_search(listing, searches[listing.search_name])
         ]
+        ranked = [
+            candidate
+            for candidate in rank_listings(visible_listings, searches)
+            if not candidate.excluded
+        ]
         best_listing, is_exact_match = _best_status_listing(
             visible_listings,
             matched,
             searches,
         )
         search_names = tuple(search.name for search in config.searches)
+        # Persist the dashboard snapshot before sending alerts. A user can tap an
+        # ntfy notification immediately, so the direct listing route must exist
+        # before notification delivery begins.
+        store.replace_dashboard_candidates(search_names, ranked)
         store.prepare_search_baselines(search_names)
         baseline_searches = {
             search.name
@@ -151,13 +160,7 @@ async def run_once(
         ),
         dismissed=dismissed_count,
     )
-    ranked = [
-        candidate
-        for candidate in rank_listings(visible_listings, searches)
-        if not candidate.excluded
-    ]
     with ListingStore(config.database_path) as store:
-        store.replace_dashboard_candidates(search_names, ranked)
         store.record_run(
             discovered=summary.discovered,
             matched=summary.matched,

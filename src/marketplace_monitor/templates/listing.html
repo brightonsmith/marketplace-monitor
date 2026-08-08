@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ record.candidate.listing.title }} · Marketmon</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  </head>
+  <body>
+    {% set listing = record.candidate.listing %}
+    <main class="container listing-detail">
+      <a href="{{ url_for('index') }}" class="back-link">← All listings</a>
+      <article class="detail-card">
+        {% if listing.image_url %}<img src="{{ listing.image_url }}" alt="{{ listing.title }}" class="detail-image">{% endif %}
+        <p class="eyebrow">{{ listing.search_name }}</p>
+        <h1>{{ listing.title }}</h1>
+        <p class="detail-price">{{ listing.price_cents|price }}</p>
+        <p>{{ listing.location or 'Location unavailable' }}{% if listing.distance_miles is not none %} · {{ '%.1f'|format(listing.distance_miles) }} mi{% endif %}</p>
+        <p class="ranking"><span class="badge">{{ 'Exact match' if record.candidate.exact else 'Candidate' }}</span> {{ '%.0f'|format(record.candidate.relevance * 100) }}% match · {{ '%.0f'|format(record.candidate.score * 100) }}% score</p>
+        {% if not record.is_current %}<p class="availability">Not in latest search results</p>{% endif %}
+        <div class="detail-actions">
+          <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}">
+            <button type="submit" name="disposition" value="interested" {% if record.disposition == 'interested' %}aria-pressed="true"{% endif %}>{{ 'Interested' if record.disposition == 'interested' else 'Mark interested' }}</button>
+          </form>
+          <a href="{{ listing.url }}" role="button" target="_blank" rel="noreferrer" class="secondary">Open Facebook</a>
+          <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}">
+            <button type="submit" name="disposition" value="dismissed" class="outline contrast">Dismiss</button>
+          </form>
+        </div>
+        <p class="seen">First seen {{ record.first_seen_utc[:10] }} · Last seen {{ record.last_seen_utc[:19].replace('T', ' ') }} UTC</p>
+      </article>
+    </main>
+  </body>
+</html>
