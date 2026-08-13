@@ -32,7 +32,6 @@ from .config_manager import (
 )
 from .models import SearchConfig
 from .geocoding import DistanceFilter
-from .parser import matches_search
 from .monitor import run_once, send_authentication_alert, watch
 from .notifier import build_notifier, format_price
 from .report import format_report

@@ -77,7 +77,6 @@ async def run_once(
                 config.browser,
                 config.searches,
                 distance_filter=distance_filter,
-                pre_distance_filter=matches_search,
             )
     finally:
         if distance_filter is not None:
