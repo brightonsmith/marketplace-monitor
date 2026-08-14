@@ -9,11 +9,14 @@
         <h1>Searches</h1>
       </div>
     </div>
-    <a href="{{ url_for('index') }}" class="secondary header-link">Listings</a>
+    <a href="{{ url_for('index') }}" role="button" class="secondary header-link">← Listings</a>
   </header>
 
   <main class="config-page">
-    <p class="page-intro">Review and edit the searches used by future monitoring cycles.</p>
+    <div class="config-toolbar">
+      <p class="page-intro">Review and edit the searches used by future monitoring cycles.</p>
+      <a href="{{ url_for('add_search') }}" role="button" class="primary">Add search</a>
+    </div>
     {% if saved %}<p class="notice" role="status">Saved {{ saved }}. The next monitoring cycle will use these settings.</p>{% endif %}
     {% if searches %}
       <div class="search-config-grid">

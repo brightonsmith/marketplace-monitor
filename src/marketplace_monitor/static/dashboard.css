@@ -31,6 +31,7 @@ h1, h2, h3, p { margin-top: 0; }
 .eyebrow { margin: 0 0 .1rem; color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
 .icon-button { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--ink); cursor: pointer; font-size: 1.35rem; }
 .icon-button:hover { border-color: #b7c6bf; }
+.icon-button svg { width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .header-link { min-height: 2.5rem; }
 .status-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .9rem; margin: 1.4rem 0 1rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow); }
 .status-dot { width: .65rem; height: .65rem; border-radius: 50%; background: #18a66f; box-shadow: 0 0 0 5px #e2f6ee; }
@@ -102,6 +103,8 @@ button, a[role="button"] { display: inline-flex; min-height: 2.65rem; align-item
 .detail-actions form, .detail-actions button, .detail-actions a { width: 100%; margin: 0; }
 .config-page, .form-page { margin-top: 1.5rem; }
 .page-intro, .form-help { color: var(--muted); }
+.config-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.config-toolbar .page-intro { margin: 0; }
 .notice, .form-error { padding: .85rem 1rem; border-radius: .75rem; font-size: .88rem; font-weight: 650; }
 .notice { border: 1px solid #b9dfce; background: var(--brand-soft); color: var(--brand-dark); }
 .form-error { border: 1px solid #efb8ae; background: #fde8e4; color: #843729; }
@@ -156,6 +159,7 @@ button, a[role="button"] { display: inline-flex; min-height: 2.65rem; align-item
   .config-summary { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
   .suggestion-panel { align-items: stretch; flex-direction: column; }
+  .config-toolbar { align-items: stretch; flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {

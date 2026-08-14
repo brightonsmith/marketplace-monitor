@@ -164,12 +164,16 @@ def test_dashboard_lists_and_edits_search_configuration(tmp_path: Path) -> None:
 
     listing_page = client.get("/")
     assert b"Search configuration" in listing_page.data
+    assert b'<svg viewBox="0 0 24 24"' in listing_page.data
+    assert "⚙".encode() not in listing_page.data
 
     searches_page = client.get("/searches")
     assert searches_page.status_code == 200
     assert b"Flair 58 Plus" in searches_page.data
     assert b"flair 58" in searches_page.data
     assert b"Open Facebook search" in searches_page.data
+    assert b'href="/searches/new"' in searches_page.data
+    assert b'role="button" class="secondary header-link"' in searches_page.data
 
     edit_page = client.get("/searches/Flair%2058%20Plus/edit")
     assert edit_page.status_code == 200
@@ -200,6 +204,46 @@ def test_dashboard_lists_and_edits_search_configuration(tmp_path: Path) -> None:
     assert updated.exclude == ("wanted", "broken")
     assert updated.minimum_relevance == 0.3
     assert updated.max_distance_miles == 40
+
+
+def test_dashboard_adds_a_search_from_the_web_form(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    _config(config, tmp_path / "marketplace.db")
+    app = create_app(config)
+    client = app.test_client()
+
+    form = client.get("/searches/new")
+    assert form.status_code == 200
+    assert b"Add a search" in form.data
+    assert b"parts only" in form.data
+
+    response = client.post(
+        "/searches/new",
+        data={
+            "csrf_token": app.config["MARKETMON_CSRF_TOKEN"],
+            "action": "save",
+            "name": "Away Carry-On",
+            "url": "https://www.facebook.com/marketplace/search/?query=away",
+            "min_price": "",
+            "max_price": "100",
+            "include_any": "Away Carry On\nAway Bigger Carry-On",
+            "exclude": "wanted, broken",
+            "minimum_relevance": "0.2",
+            "max_distance_miles": "40",
+        },
+    )
+
+    assert response.status_code == 303
+    searches = load_config(config).searches
+    assert [search.name for search in searches] == [
+        "Flair 58 Plus",
+        "Away Carry-On",
+    ]
+    assert searches[1].max_price_cents == 10_000
+    assert searches[1].include_any == (
+        "away carry on",
+        "away bigger carry-on",
+    )
 
 
 def test_dashboard_rejects_invalid_or_forged_search_edits(tmp_path: Path) -> None:
@@ -281,3 +325,22 @@ def test_dashboard_analyzes_live_titles_without_saving(
     assert b"data-add-suggestions" in response.data
     assert received[0][1].include_any == ()
     assert load_config(config).searches[0].include_any == ("flair 58",)
+
+    new_response = client.post(
+        "/searches/new",
+        data={
+            "csrf_token": app.config["MARKETMON_CSRF_TOKEN"],
+            "action": "suggest",
+            "name": "Another Flair Search",
+            "url": "https://www.facebook.com/marketplace/search/?query=flair",
+            "min_price": "",
+            "max_price": "",
+            "include_any": "",
+            "exclude": "wanted",
+            "minimum_relevance": "0.2",
+            "max_distance_miles": "",
+        },
+    )
+    assert new_response.status_code == 200
+    assert b"flair 58 plus" in new_response.data
+    assert len(load_config(config).searches) == 1

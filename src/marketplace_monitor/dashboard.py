@@ -28,7 +28,11 @@ from .config import (
     load_config_document,
     parse_config_document,
 )
-from .config_manager import replace_search_document, search_document
+from .config_manager import (
+    add_search_documents,
+    replace_search_document,
+    search_document,
+)
 from .geocoding import GeocodingError
 from .models import SearchConfig
 from .notifier import format_price
@@ -105,6 +109,18 @@ def _search_document_from_form(
             values["max_distance_miles"], "Hard radius"
         ),
     }
+
+
+def _suggestions_for_search_document(
+    config_file: Path,
+    search: dict,
+) -> PhraseSuggestionReport:
+    raw_config = copy.deepcopy(load_config_document(config_file))
+    raw_config["searches"] = [search]
+    draft_config = parse_config_document(raw_config, config_file)
+    return asyncio.run(
+        fetch_phrase_suggestions(draft_config, draft_config.searches[0])
+    )
 
 
 def _monitor_is_stale(completed_utc: str | None, interval_minutes: int) -> bool:
@@ -273,6 +289,91 @@ def create_app(config_path: Path) -> Flask:
             saved=request.args.get("saved"),
         )
 
+    @app.route("/searches/new", methods=("GET", "POST"))
+    def add_search():
+        config_file = app.config["MARKETMON_CONFIG_PATH"]
+        error = None
+        suggestion_report: PhraseSuggestionReport | None = None
+        if request.method == "POST":
+            supplied_token = request.form.get("csrf_token", "")
+            if not hmac.compare_digest(
+                supplied_token,
+                app.config["MARKETMON_CSRF_TOKEN"],
+            ):
+                abort(400)
+            values = {
+                field: request.form.get(field, "")
+                for field in (
+                    "name",
+                    "url",
+                    "min_price",
+                    "max_price",
+                    "include_any",
+                    "exclude",
+                    "minimum_relevance",
+                    "max_distance_miles",
+                )
+            }
+            try:
+                action = request.form.get("action", "save")
+                document = _search_document_from_form(
+                    values,
+                    require_exact_phrases=action != "suggest",
+                )
+                if action == "suggest":
+                    suggestion_report = _suggestions_for_search_document(
+                        config_file,
+                        document,
+                    )
+                    form = values
+                elif action == "save":
+                    added_name = add_search_documents(
+                        config_file,
+                        [document],
+                    )[0]
+                else:
+                    abort(400)
+            except (
+                BrowserSessionError,
+                ConfigError,
+                GeocodingError,
+                PlaywrightError,
+            ) as caught:
+                error = str(caught)
+                form = values
+            else:
+                if action == "save":
+                    return redirect(
+                        url_for("searches", saved=added_name), code=303
+                    )
+        else:
+            form = _search_form_values(
+                {
+                    "name": "",
+                    "url": "",
+                    "include_any": [],
+                    "exclude": [
+                        "wanted",
+                        "looking for",
+                        "broken",
+                        "for parts",
+                        "parts only",
+                    ],
+                    "minimum_relevance": 0.20,
+                }
+            )
+        return (
+            render_template(
+                "edit_search.html",
+                original_name=None,
+                form=form,
+                error=error,
+                suggestion_report=suggestion_report,
+                csrf_token=app.config["MARKETMON_CSRF_TOKEN"],
+            ),
+            400 if error else 200,
+        )
+
     @app.route("/searches/<path:name>/edit", methods=("GET", "POST"))
     def edit_search(name: str):
         config_file = app.config["MARKETMON_CONFIG_PATH"]
@@ -306,14 +407,9 @@ def create_app(config_path: Path) -> Flask:
                     require_exact_phrases=action != "suggest",
                 )
                 if action == "suggest":
-                    raw_config = copy.deepcopy(load_config_document(config_file))
-                    raw_config["searches"] = [replacement]
-                    draft_config = parse_config_document(raw_config, config_file)
-                    suggestion_report = asyncio.run(
-                        fetch_phrase_suggestions(
-                            draft_config,
-                            draft_config.searches[0],
-                        )
+                    suggestion_report = _suggestions_for_search_document(
+                        config_file,
+                        replacement,
                     )
                     form = values
                 elif action == "save":

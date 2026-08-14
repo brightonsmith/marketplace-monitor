@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Edit {{ original_name }} · Marketmon{% endblock %}
+{% block title %}{{ ('Edit ' ~ original_name) if original_name else 'Add search' }} · Marketmon{% endblock %}
 {% block content %}
   <main class="form-page">
     <a href="{{ url_for('searches') }}" class="back-link">← Searches</a>
     <section class="form-card">
       <p class="eyebrow">Search configuration</p>
-      <h1>Edit {{ original_name }}</h1>
+      <h1>{{ ('Edit ' ~ original_name) if original_name else 'Add a search' }}</h1>
       <p class="form-help">Changes apply automatically on the next monitoring cycle.</p>
       {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
       <form method="post" class="search-form">
@@ -48,7 +48,7 @@
           <label>Hard radius in miles<input name="max_distance_miles" type="number" min="0.1" step="0.1" inputmode="decimal" value="{{ form.max_distance_miles }}" placeholder="Off"></label>
         </div>
         <div class="form-actions">
-          <button type="submit" name="action" value="save" class="primary">Save changes</button>
+          <button type="submit" name="action" value="save" class="primary">{{ 'Save changes' if original_name else 'Add search' }}</button>
           <a href="{{ url_for('searches') }}" role="button" class="secondary">Cancel</a>
         </div>
       </form>

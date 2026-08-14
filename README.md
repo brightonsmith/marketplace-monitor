@@ -56,10 +56,11 @@ monitoring history. Selecting **Interested** saves the listing before opening
 the Facebook listing. Saved listings remain in the dashboard when they disappear
 from the latest search and are updated if they reappear with changed details.
 The gear button opens a mobile search-configuration screen showing each search's
-URL, filters, and title phrases. Edits are validated and written atomically; the
-watcher uses them on its next cycle without a service restart. Each editor also
-has **Analyze live results**, which displays ranked phrase suggestions with
-counts and example titles and can add selected phrases to the form before saving.
+URL, filters, and title phrases. Searches can be added or edited there. Changes
+are validated and written atomically, and the watcher uses them on its next cycle
+without a service restart. Each form also has **Analyze live results**, which
+displays ranked phrase suggestions with counts and example titles and can add
+selected phrases before saving.
 
 For an HTTPS home-screen app on iPhone, use Tailscale Serve as a private reverse
 proxy after the dashboard is running:
