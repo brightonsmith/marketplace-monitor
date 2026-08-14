@@ -398,7 +398,21 @@ class ListingStore:
               )
             """
         )
+        self.connection.execute(
+            """
+            INSERT INTO metadata (key, value)
+            VALUES ('dashboard_updated_utc', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (now,),
+        )
         self.connection.commit()
+
+    def dashboard_updated_utc(self) -> str | None:
+        row = self.connection.execute(
+            "SELECT value FROM metadata WHERE key = 'dashboard_updated_utc'"
+        ).fetchone()
+        return row["value"] if row else None
 
     def dashboard_listing_url(self, listing_id: str) -> str | None:
         row = self.connection.execute(

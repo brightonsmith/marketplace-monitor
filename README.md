@@ -40,10 +40,38 @@ marketmon check
 marketmon dashboard
 ```
 
-Open `http://localhost:8000`. To expose it on a private Pi network, bind it
-explicitly with `marketmon dashboard --host 0.0.0.0` and use the Pi's private
-address. The dashboard includes active, interested, and dismissed views,
-per-search result limits, feedback controls, and recent monitoring diagnostics.
+Open `http://localhost:8000`. To reach it through Tailscale, bind it explicitly
+with `marketmon dashboard --host 0.0.0.0` and open the Pi's Tailscale hostname,
+for example `http://argus:8000`. The installed dashboard service uses this bind
+address automatically.
+
+The dashboard is a self-contained mobile web app: it does not depend on a CSS or
+JavaScript CDN, checks for completed monitoring runs every 30 seconds, and
+reloads when newer results are available. It includes current, saved, and
+dismissed views, per-search result limits, persistent feedback controls, and
+monitoring history. Selecting **Interested** saves the listing before opening
+the Facebook listing. Saved listings remain in the dashboard when they disappear
+from the latest search and are updated if they reappear with changed details.
+
+For an HTTPS home-screen app on iPhone, use Tailscale Serve as a private reverse
+proxy after the dashboard is running:
+
+```bash
+tailscale serve --bg http://127.0.0.1:8000
+tailscale serve status
+```
+
+Open the HTTPS URL reported by `tailscale serve status` in Safari, then use
+**Share > Add to Home Screen**. Set that URL in
+`~/.config/marketmon/environment` so notification links use it as well:
+
+```text
+MARKETMON_DASHBOARD_URL=https://argus.your-tailnet.ts.net
+```
+
+Apply the environment change with `marketmon service restart`. Tailscale Serve
+keeps the HTTPS endpoint restricted to devices authorized on the tailnet; no
+router port forwarding is required.
 
 `-c/--config` may appear before or after a top-level command. Relative browser
 profile and database paths are resolved from the configuration file's directory.

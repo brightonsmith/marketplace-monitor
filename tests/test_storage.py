@@ -81,6 +81,7 @@ def test_dashboard_snapshot_is_separate_and_keeps_images_and_feedback(
     ranked = RankedListing(item, 0.91, 0.92, True, False)
     with ListingStore(tmp_path / "listings.db") as store:
         store.replace_dashboard_candidates(("Flair",), [ranked])
+        assert store.dashboard_updated_utc() is not None
         assert not store.needs_notification(item.listing_id)
         active = store.dashboard_listings()
         assert active[0].listing.image_url == "https://example.test/image.jpg"

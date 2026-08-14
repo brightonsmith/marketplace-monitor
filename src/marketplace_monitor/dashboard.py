@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from flask import Flask, abort, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    abort,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 
 from .config import load_config
 from .models import SearchConfig
@@ -19,6 +29,19 @@ class DashboardListing:
     last_seen_utc: str
     disposition: str | None
     is_current: bool
+
+
+def _monitor_is_stale(completed_utc: str | None, interval_minutes: int) -> bool:
+    if completed_utc is None:
+        return False
+    try:
+        completed = datetime.fromisoformat(completed_utc)
+    except ValueError:
+        return True
+    if completed.tzinfo is None:
+        completed = completed.replace(tzinfo=UTC)
+    tolerance = timedelta(minutes=max(5, interval_minutes * 2))
+    return datetime.now(UTC) - completed > tolerance
 
 
 def _group_listings(
@@ -62,6 +85,25 @@ def create_app(config_path: Path) -> Flask:
     app = Flask(__name__)
     app.config["MARKETMON_CONFIG_PATH"] = config_path
 
+    @app.after_request
+    def secure_response(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "img-src 'self' https: data:; "
+            "style-src 'self'; "
+            "script-src 'self'; "
+            "connect-src 'self'; "
+            "form-action 'self' https://www.facebook.com; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'"
+        )
+        if response.mimetype in {"text/html", "application/json"}:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.template_filter("price")
     def price_filter(value: int | None) -> str:
         return format_price(value)
@@ -82,6 +124,12 @@ def create_app(config_path: Path) -> Flask:
             stored = store.dashboard_listings(view)
             counts = store.disposition_counts()
             recent_runs = store.recent_runs(8)
+            dashboard_updated_utc = store.dashboard_updated_utc()
+        latest_run = recent_runs[0] if recent_runs else None
+        monitor_stale = _monitor_is_stale(
+            latest_run.completed_utc if latest_run else None,
+            current.check_interval_minutes,
+        )
         return render_template(
             "dashboard.html",
             groups=_group_listings(stored, current.searches, limit),
@@ -89,7 +137,55 @@ def create_app(config_path: Path) -> Flask:
             view=view,
             limit=limit,
             recent_runs=recent_runs,
+            latest_run=latest_run,
+            monitor_stale=monitor_stale,
+            dashboard_updated_utc=dashboard_updated_utc,
         )
+
+    @app.get("/api/status")
+    def status():
+        current = load_config(app.config["MARKETMON_CONFIG_PATH"])
+        with ListingStore(current.database_path) as store:
+            recent_runs = store.recent_runs(1)
+            counts = store.disposition_counts()
+            dashboard_updated_utc = store.dashboard_updated_utc()
+        latest_run = asdict(recent_runs[0]) if recent_runs else None
+        return jsonify(
+            {
+                "latest_run": latest_run,
+                "counts": counts,
+                "dashboard_updated_utc": dashboard_updated_utc,
+                "monitor_stale": _monitor_is_stale(
+                    recent_runs[0].completed_utc if recent_runs else None,
+                    current.check_interval_minutes,
+                ),
+            }
+        )
+
+    @app.get("/healthz")
+    def health():
+        current = load_config(app.config["MARKETMON_CONFIG_PATH"])
+        with ListingStore(current.database_path) as store:
+            recent_runs = store.recent_runs(1)
+        monitor_stale = _monitor_is_stale(
+            recent_runs[0].completed_utc if recent_runs else None,
+            current.check_interval_minutes,
+        )
+        return jsonify(
+            {
+                "status": "stale" if monitor_stale else "ok",
+                "latest_run_utc": (
+                    recent_runs[0].completed_utc if recent_runs else None
+                ),
+            }
+        )
+
+    @app.get("/service-worker.js")
+    def service_worker():
+        response = send_from_directory(app.static_folder, "service-worker.js")
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Service-Worker-Allowed"] = "/"
+        return response
 
     @app.get("/listings/<listing_id>")
     def listing_detail(listing_id: str):
@@ -126,11 +222,7 @@ def create_app(config_path: Path) -> Flask:
                 abort(404)
             store.set_disposition(listing_id, disposition)
         if disposition == "interested":
-            return redirect(url_for("listing_detail", listing_id=listing_id), code=303)
-        if request.headers.get("HX-Request") == "true":
-            response = app.response_class(status=204)
-            response.headers["HX-Refresh"] = "true"
-            return response
+            return redirect(listing_url, code=303)
         response = redirect(
             url_for(
                 "index",

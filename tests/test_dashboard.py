@@ -52,33 +52,35 @@ def test_dashboard_renders_rich_listing_and_updates_feedback(tmp_path: Path) -> 
     assert page.status_code == 200
     assert b"Flair 58 Plus" in page.data
     assert b"https://example.test/image.jpg" in page.data
-    assert b"Recent monitoring runs" in page.data
+    assert b"Monitoring history" in page.data
+    assert b"Monitoring active" in page.data
+    assert b"cdn.jsdelivr.net" not in page.data
+    assert b"unpkg.com" not in page.data
 
     response = client.post(
         "/listings/123/feedback",
         data={"disposition": "interested", "view": "active", "limit": "10"},
     )
     assert response.status_code == 303
-    assert response.headers["Location"] == "/listings/123"
+    assert response.headers["Location"] == "https://example.test/listing"
     detail = client.get("/listings/123")
     assert detail.status_code == 200
     assert b"Flair 58 Plus" in detail.data
-    assert b"Open Facebook" in detail.data
-    assert b"https://example.test/listing" in detail.data
+    assert b"Open on Facebook" in detail.data
     interested = client.get("/?view=interested&limit=10")
     assert b"Flair 58 Plus" in interested.data
 
     dismissed = client.post(
         "/listings/123/feedback",
         data={"disposition": "dismissed", "view": "active", "limit": "10"},
-        headers={"HX-Request": "true"},
     )
-    assert dismissed.status_code == 204
-    assert dismissed.headers["HX-Refresh"] == "true"
-    assert b"<!doctype html>" not in dismissed.data
+    assert dismissed.status_code == 303
+    assert dismissed.headers["Location"] == "/?view=active&limit=10"
 
 
-def test_interested_button_opens_listing_without_htmx(tmp_path: Path) -> None:
+def test_interested_button_uses_normal_form_without_popup_or_htmx(
+    tmp_path: Path,
+) -> None:
     database = tmp_path / "marketplace.db"
     config = tmp_path / "config.yaml"
     _config(config, database)
@@ -90,8 +92,56 @@ def test_interested_button_opens_listing_without_htmx(tmp_path: Path) -> None:
         )
 
     page = create_app(config).test_client().get("/")
-    assert b'target="_blank"' in page.data
-    assert b'hx-post="/listings/123/feedback"' in page.data
+    assert b'target="_blank"' not in page.data
+    assert b"hx-post" not in page.data
+    assert b'action="/listings/123/feedback"' in page.data
+
+
+def test_dashboard_status_and_installable_assets(tmp_path: Path) -> None:
+    database = tmp_path / "marketplace.db"
+    config = tmp_path / "config.yaml"
+    _config(config, database)
+    with ListingStore(database) as store:
+        store.record_run(
+            discovered=62,
+            matched=1,
+            new=1,
+            notified=1,
+            held=0,
+            dismissed=2,
+        )
+
+    client = create_app(config).test_client()
+    status = client.get("/api/status")
+    assert status.status_code == 200
+    assert status.json["latest_run"]["discovered"] == 62
+    assert status.json["latest_run"]["matched"] == 1
+    assert status.json["dashboard_updated_utc"] is None
+    assert status.headers["Cache-Control"] == "no-store"
+
+    health = client.get("/healthz")
+    assert health.json["status"] == "ok"
+    assert health.json["latest_run_utc"] is not None
+
+    manifest = client.get("/static/manifest.webmanifest")
+    assert manifest.status_code == 200
+    assert manifest.json["display"] == "standalone"
+
+    worker = client.get("/service-worker.js")
+    assert worker.status_code == 200
+    assert worker.headers["Service-Worker-Allowed"] == "/"
+    assert worker.headers["Cache-Control"] == "no-cache"
+
+
+def test_dashboard_adds_private_app_security_headers(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    _config(config, tmp_path / "marketplace.db")
+
+    response = create_app(config).test_client().get("/")
+
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
 def test_dashboard_rejects_invalid_view_and_limit(tmp_path: Path) -> None:

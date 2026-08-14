@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Marketmon">
+  <rect width="512" height="512" rx="112" fill="#132a24"/>
+  <path d="M134 183h244l-23 181a37 37 0 0 1-37 32H194a37 37 0 0 1-37-32z" fill="#f5f7f6"/>
+  <path d="M202 203v-31a54 54 0 0 1 108 0v31" fill="none" stroke="#5bd4a8" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="211" cy="287" r="18" fill="#132a24"/>
+  <circle cx="301" cy="287" r="18" fill="#132a24"/>
+  <path d="M210 337c28 20 64 20 92 0" fill="none" stroke="#132a24" stroke-width="18" stroke-linecap="round"/>
+</svg>
