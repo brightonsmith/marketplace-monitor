@@ -17,6 +17,7 @@ marketmon init --edit                  edit the existing configuration
 marketmon login                        save and verify a Facebook session
 marketmon add [SEARCH.yaml]             add a search interactively or from YAML
 marketmon edit [SEARCH NAME]            edit an active search interactively
+marketmon suggest [SEARCH NAME]         suggest exact-title phrases from live results
 marketmon list                          list active searches
 marketmon remove "SEARCH NAME"          remove a search
 marketmon feedback LISTING_ID STATE      save interested/dismissed feedback
@@ -54,6 +55,11 @@ dismissed views, per-search result limits, persistent feedback controls, and
 monitoring history. Selecting **Interested** saves the listing before opening
 the Facebook listing. Saved listings remain in the dashboard when they disappear
 from the latest search and are updated if they reappear with changed details.
+The gear button opens a mobile search-configuration screen showing each search's
+URL, filters, and title phrases. Edits are validated and written atomically; the
+watcher uses them on its next cycle without a service restart. Each editor also
+has **Analyze live results**, which displays ranked phrase suggestions with
+counts and example titles and can add selected phrases to the form before saving.
 
 For an HTTPS home-screen app on iPhone, use Tailscale Serve as a private reverse
 proxy after the dashboard is running:
@@ -176,6 +182,21 @@ marketmon edit "Flair 58 Plus"
 When the name is omitted, Marketmon displays a numbered list of active searches.
 The watcher reloads saved edits before its next cycle; no service restart is
 required.
+
+If the exact-title phrases are not obvious, analyze the titles currently returned
+by Facebook:
+
+```bash
+marketmon suggest "Flair 58 Plus"
+```
+
+Marketmon ranks distinctive recurring phrases, reports how many listings each
+one matches, and shows example titles. The same live helper appears as setting
+`9` in the interactive `add` and `edit` menus, where selected suggestions can be
+inserted directly. Suggestions are derived from the current result titles and
+respect the search's price, exclusion, and hard-radius filters. Existing exact
+phrases are intentionally ignored during analysis so a typo cannot hide useful
+recommendations.
 
 Exact and excluded title phrases are normalized before comparison. Matching is
 case-, punctuation-, and spacing-invariant, joins split product names, and

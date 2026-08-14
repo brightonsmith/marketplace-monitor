@@ -8,7 +8,7 @@ import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from playwright.async_api import Error as PlaywrightError
 
@@ -38,6 +38,7 @@ from .models import SearchConfig
 from .geocoding import DistanceFilter
 from .monitor import run_once, send_authentication_alert, watch
 from .notifier import build_notifier, format_price
+from .parser import normalize_match_text
 from .report import format_report
 from .ranking import rank_listings
 from .service import (
@@ -50,6 +51,7 @@ from .service import (
     uninstall_service,
 )
 from .storage import ListingStore
+from .suggestions import PhraseSuggestionReport, fetch_phrase_suggestions
 
 
 def _default_config_path() -> Path:
@@ -153,6 +155,17 @@ def build_parser() -> argparse.ArgumentParser:
     _config_argument(edit_parser, subcommand=True)
     edit_parser.add_argument(
         "name", nargs="?", help="search name (prompts when omitted)"
+    )
+
+    suggest_parser = subparsers.add_parser(
+        "suggest", help="suggest exact-title phrases from live results"
+    )
+    _config_argument(suggest_parser, subcommand=True)
+    suggest_parser.add_argument(
+        "name", nargs="?", help="search name (prompts when omitted)"
+    )
+    suggest_parser.add_argument(
+        "-n", "--limit", type=int, default=8, help="suggestions to show (default: 8)"
     )
 
     list_parser = subparsers.add_parser("list", help="show active searches")
@@ -565,6 +578,8 @@ def _interactive_config(
 
 def _interactive_search(
     initial: dict[str, Any] | None = None,
+    *,
+    suggester: Callable[[dict[str, Any]], PhraseSuggestionReport] | None = None,
 ) -> dict[str, Any] | None:
     search: dict[str, Any] = {
         "name": "",
@@ -596,6 +611,8 @@ def _interactive_search(
         print(
             f"  8. Hard radius in miles: {_display_value(search['max_distance_miles'])}"
         )
+        if suggester is not None:
+            print("  9. Suggest exact-title phrases from live results")
         print("\nSelect any setting again to revise it; B returns from a setting prompt.")
         print("  S. Save search    Q. Cancel")
         choice = input("Select a setting: ").strip().casefold()
@@ -651,6 +668,30 @@ def _interactive_search(
                 minimum=0.1,
                 allow_none=True,
             )
+        elif choice == "9" and suggester is not None:
+            if not search["name"] or not search["url"]:
+                print("Enter the search name and Marketplace URL first.")
+                continue
+            try:
+                report = suggester(search)
+            except ConfigError as error:
+                print(f"Cannot analyze this search yet: {error}")
+                continue
+            _print_phrase_suggestions(str(search["name"]), report)
+            if not report.suggestions:
+                continue
+            selection = _prompt_suggestion_selection(len(report.suggestions))
+            if selection is None:
+                continue
+            existing = list(search["include_any"])
+            existing_keys = {normalize_match_text(phrase) for phrase in existing}
+            for index in selection:
+                phrase = report.suggestions[index].phrase
+                key = normalize_match_text(phrase)
+                if key not in existing_keys:
+                    existing.append(phrase)
+                    existing_keys.add(key)
+            search["include_any"] = existing
         else:
             print("Select a setting number, S to save, or Q to cancel.")
 
@@ -658,7 +699,7 @@ def _interactive_search(
 def _choose_search_to_edit(config_path: Path) -> str | None:
     searches = active_searches(config_path)
     if not searches:
-        raise ConfigError("No active searches to edit.")
+        raise ConfigError("No active searches.")
     if len(searches) == 1:
         return searches[0].name
     print("Active searches:")
@@ -677,10 +718,80 @@ def _choose_search_to_edit(config_path: Path) -> str | None:
             print("Select a listed search number, or Q to cancel.")
 
 
+def _print_phrase_suggestions(
+    search_name: str,
+    report: PhraseSuggestionReport,
+) -> None:
+    print(
+        f"\nExact-title suggestions · {search_name} · "
+        f"{report.analyzed_listings} listings analyzed"
+    )
+    if not report.suggestions:
+        print("No distinctive phrases were found in the current results.")
+        return
+    for index, suggestion in enumerate(report.suggestions, start=1):
+        noun = "listing" if suggestion.matching_listings == 1 else "listings"
+        print(
+            f"  {index}. {suggestion.phrase} · "
+            f"{suggestion.matching_listings} {noun}"
+        )
+        for title in suggestion.example_titles:
+            print(f"     e.g. {title}")
+
+
+def _prompt_suggestion_selection(count: int) -> tuple[int, ...] | None:
+    while True:
+        value = input(
+            "Select suggestions to add, comma-separated; A for all; "
+            "or B to go back: "
+        ).strip().casefold()
+        if value in {"b", "back", ""}:
+            return None
+        if value in {"a", "all"}:
+            return tuple(range(count))
+        try:
+            selected = tuple(
+                dict.fromkeys(int(item.strip()) - 1 for item in value.split(","))
+            )
+        except ValueError:
+            selected = ()
+        if selected and all(0 <= index < count for index in selected):
+            return selected
+        print(f"Choose one or more numbers from 1 to {count}, A, or B.")
+
+
+def _search_suggester(
+    config_path: Path,
+) -> Callable[[dict[str, Any]], PhraseSuggestionReport]:
+    def suggest(search_document: dict[str, Any]) -> PhraseSuggestionReport:
+        document = copy.deepcopy(load_config_document(config_path))
+        document["searches"] = [copy.deepcopy(search_document)]
+        config = parse_config_document(document, config_path)
+        return asyncio.run(fetch_phrase_suggestions(config, config.searches[0]))
+
+    return suggest
+
+
 async def _run_browser_command(args: argparse.Namespace) -> None:
     config = load_config(args.config)
     if args.command == "login":
         await interactive_login(config.browser)
+        return
+
+    if args.command == "suggest":
+        if args.limit < 1:
+            raise ConfigError("suggest limit must be positive")
+        name = args.name or _choose_search_to_edit(args.config)
+        if name is None:
+            print("Cancelled; no search was analyzed.")
+            return
+        search = _select_searches(config.searches, [name])[0]
+        report = await fetch_phrase_suggestions(
+            config,
+            search,
+            limit=args.limit,
+        )
+        _print_phrase_suggestions(search.name, report)
         return
 
     notifier = build_notifier(config.notifications)
@@ -809,7 +920,9 @@ def _run_management_command(args: argparse.Namespace) -> bool:
         return True
     if args.command == "add":
         if args.source is None:
-            search = _interactive_search()
+            search = _interactive_search(
+                suggester=_search_suggester(args.config)
+            )
             if search is None:
                 print("Cancelled; no search was added.")
                 return True
@@ -827,7 +940,10 @@ def _run_management_command(args: argparse.Namespace) -> bool:
         if name is None:
             print("Cancelled; no search was changed.")
             return True
-        updated = _interactive_search(search_document(args.config, name))
+        updated = _interactive_search(
+            search_document(args.config, name),
+            suggester=_search_suggester(args.config),
+        )
         if updated is None:
             print("Cancelled; no search was changed.")
             return True

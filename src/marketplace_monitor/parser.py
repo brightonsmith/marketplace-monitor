@@ -154,8 +154,14 @@ def normalize_match_text(text: str) -> str:
     return "".join(words)
 
 
-def _word_features(text: str) -> tuple[str, ...]:
+def normalized_words(text: str) -> tuple[str, ...]:
+    """Return normalized word tokens for matching and title analysis."""
     _, words = _normalized_words(text)
+    return words
+
+
+def _word_features(text: str) -> tuple[str, ...]:
+    words = normalized_words(text)
     unigrams = tuple(words)
     bigrams = tuple(f"{first} {second}" for first, second in zip(words, words[1:]))
     compounds = tuple(f"{first}{second}" for first, second in zip(words, words[1:]))

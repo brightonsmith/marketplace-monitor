@@ -10,9 +10,14 @@
         <h1>Marketmon</h1>
       </div>
     </div>
-    <button type="button" class="icon-button" data-refresh aria-label="Refresh dashboard" title="Refresh dashboard">
-      <span aria-hidden="true">↻</span>
-    </button>
+    <div class="header-actions">
+      <a href="{{ url_for('searches') }}" class="icon-button" aria-label="Search configuration" title="Search configuration">
+        <span aria-hidden="true">⚙</span>
+      </a>
+      <button type="button" class="icon-button" data-refresh aria-label="Refresh dashboard" title="Refresh dashboard">
+        <span aria-hidden="true">↻</span>
+      </button>
+    </div>
   </header>
 
   <main>

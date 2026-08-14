@@ -18,6 +18,7 @@ function updateRelativeTimes() {
 }
 
 async function checkForUpdates() {
+  if (!document.body.hasAttribute("data-latest-run")) return;
   if (document.visibilityState !== "visible") return;
   try {
     const response = await fetch("/api/status", { cache: "no-store" });
@@ -52,6 +53,34 @@ document.querySelectorAll("[data-submit-on-change]").forEach((control) => {
 });
 document.querySelectorAll("[data-refresh]").forEach((control) => {
   control.addEventListener("click", () => window.location.reload());
+});
+document.querySelectorAll("[data-add-suggestions]").forEach((control) => {
+  control.addEventListener("click", () => {
+    const target = document.querySelector("[data-exact-phrases]");
+    if (!target) return;
+    const existing = target.value
+      .split(/[,\n]+/)
+      .map((phrase) => phrase.trim())
+      .filter(Boolean);
+    const known = new Set(existing.map((phrase) => phrase.toLocaleLowerCase()));
+    document.querySelectorAll("[data-phrase-suggestion]:checked").forEach((checkbox) => {
+      const phrase = checkbox.value.trim();
+      if (phrase && !known.has(phrase.toLocaleLowerCase())) {
+        existing.push(phrase);
+        known.add(phrase.toLocaleLowerCase());
+      }
+      checkbox.checked = false;
+    });
+    target.value = existing.join("\n");
+    target.focus();
+  });
+});
+document.querySelectorAll(".search-form").forEach((form) => {
+  form.addEventListener("submit", (event) => {
+    if (event.submitter?.value !== "suggest") return;
+    event.submitter.textContent = "Analyzing…";
+    form.setAttribute("aria-busy", "true");
+  });
 });
 document.addEventListener("visibilitychange", checkForUpdates);
 updateRelativeTimes();

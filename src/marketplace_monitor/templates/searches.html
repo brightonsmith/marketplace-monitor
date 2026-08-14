@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Searches · Marketmon{% endblock %}
+{% block content %}
+  <header class="app-header">
+    <div class="brand-lockup">
+      <img src="{{ url_for('static', filename='app-icon.svg') }}" alt="" width="44" height="44">
+      <div>
+        <p class="eyebrow">Private marketplace monitor</p>
+        <h1>Searches</h1>
+      </div>
+    </div>
+    <a href="{{ url_for('index') }}" class="secondary header-link">Listings</a>
+  </header>
+
+  <main class="config-page">
+    <p class="page-intro">Review and edit the searches used by future monitoring cycles.</p>
+    {% if saved %}<p class="notice" role="status">Saved {{ saved }}. The next monitoring cycle will use these settings.</p>{% endif %}
+    {% if searches %}
+      <div class="search-config-grid">
+        {% for search in searches %}
+          <article class="config-card">
+            <div class="section-heading">
+              <h2>{{ search.name }}</h2>
+              <a href="{{ url_for('edit_search', name=search.name) }}">Edit</a>
+            </div>
+            <dl class="config-summary">
+              <div><dt>Price</dt><dd>{{ search.min_price_cents|price if search.min_price_cents is not none else 'Any' }}–{{ search.max_price_cents|price if search.max_price_cents is not none else 'Any' }}</dd></div>
+              <div><dt>Relevance</dt><dd>{{ '%.0f'|format(search.minimum_relevance * 100) }}%</dd></div>
+              <div><dt>Hard radius</dt><dd>{{ ('%g miles'|format(search.max_distance_miles)) if search.max_distance_miles is not none else 'Off' }}</dd></div>
+            </dl>
+            <div class="config-section">
+              <h3>Exact-title phrases</h3>
+              <div class="term-list">{% for phrase in search.include_any %}<span>{{ phrase }}</span>{% else %}<em>None</em>{% endfor %}</div>
+            </div>
+            <div class="config-section">
+              <h3>Excluded phrases</h3>
+              <div class="term-list muted">{% for phrase in search.exclude %}<span>{{ phrase }}</span>{% else %}<em>None</em>{% endfor %}</div>
+            </div>
+            <a href="{{ search.url }}" class="marketplace-url">Open Facebook search</a>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <article class="empty">No active searches are configured.</article>
+    {% endif %}
+  </main>
+{% endblock %}

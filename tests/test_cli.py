@@ -13,6 +13,7 @@ from marketplace_monitor.cli import (
 from marketplace_monitor.config import ConfigError, load_config
 from marketplace_monitor.config_manager import add_search_documents, create_config
 from marketplace_monitor.models import SearchConfig
+from marketplace_monitor.suggestions import PhraseSuggestion, PhraseSuggestionReport
 
 
 def test_version_uses_published_distribution_name(monkeypatch) -> None:
@@ -52,6 +53,18 @@ def test_edit_accepts_an_optional_search_name() -> None:
     )
     assert prompted.name is None
     assert named.name == "Away Carry-On Luggage"
+
+
+def test_suggest_accepts_an_optional_search_name_and_limit() -> None:
+    parser = build_parser()
+    prompted = parser.parse_args(["suggest", "-c", "active.yaml"])
+    named = parser.parse_args(
+        ["suggest", "Away Carry-On Luggage", "-n", "5", "-c", "active.yaml"]
+    )
+    assert prompted.name is None
+    assert prompted.limit == 8
+    assert named.name == "Away Carry-On Luggage"
+    assert named.limit == 5
 
 
 def test_init_supports_interactive_and_default_modes() -> None:
@@ -164,6 +177,38 @@ def test_interactive_search_can_go_back_without_changing_a_value(monkeypatch) ->
 
     assert search is not None
     assert search["include_any"] == ["away carry on"]
+
+
+def test_interactive_search_can_add_live_phrase_suggestions(monkeypatch) -> None:
+    initial = {
+        "name": "Away Carry-On Luggage",
+        "url": "https://www.facebook.com/marketplace/search/?query=away",
+        "include_any": ["Away Carry-On"],
+    }
+    report = PhraseSuggestionReport(
+        analyzed_listings=12,
+        suggestions=(
+            PhraseSuggestion("away carry on", 8, ("Away Carry-On Flex",)),
+            PhraseSuggestion(
+                "away bigger carry on", 3, ("Away Bigger Carry On",)
+            ),
+        ),
+    )
+    received = []
+    answers = iter(["9", "a", "s"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    search = _interactive_search(
+        initial,
+        suggester=lambda draft: received.append(draft.copy()) or report,
+    )
+
+    assert received[0]["name"] == "Away Carry-On Luggage"
+    assert search is not None
+    assert search["include_any"] == [
+        "Away Carry-On",
+        "away bigger carry on",
+    ]
 
 
 def test_edit_command_updates_a_saved_search(monkeypatch, tmp_path) -> None:

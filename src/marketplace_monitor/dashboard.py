@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import copy
+import hmac
+import re
+import secrets
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,12 +19,22 @@ from flask import (
     send_from_directory,
     url_for,
 )
+from playwright.async_api import Error as PlaywrightError
 
-from .config import load_config
+from .browser import BrowserSessionError
+from .config import (
+    ConfigError,
+    load_config,
+    load_config_document,
+    parse_config_document,
+)
+from .config_manager import replace_search_document, search_document
+from .geocoding import GeocodingError
 from .models import SearchConfig
 from .notifier import format_price
 from .ranking import RankedListing
 from .storage import ListingStore, StoredCandidate
+from .suggestions import PhraseSuggestionReport, fetch_phrase_suggestions
 
 
 @dataclass(frozen=True)
@@ -29,6 +44,67 @@ class DashboardListing:
     last_seen_utc: str
     disposition: str | None
     is_current: bool
+
+
+def _terms_from_form(value: str) -> list[str]:
+    return [term.strip() for term in re.split(r"[,\n]+", value) if term.strip()]
+
+
+def _optional_number(value: str, label: str) -> float | None:
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError as error:
+        raise ConfigError(f"{label} must be a number or left blank") from error
+
+
+def _search_form_values(document: dict) -> dict[str, str]:
+    def optional_value(name: str) -> str:
+        value = document.get(name)
+        return "" if value is None else str(value)
+
+    return {
+        "name": str(document.get("name", "")),
+        "url": str(document.get("url", "")),
+        "min_price": optional_value("min_price"),
+        "max_price": optional_value("max_price"),
+        "include_any": "\n".join(document.get("include_any") or ()),
+        "exclude": "\n".join(document.get("exclude") or ()),
+        "minimum_relevance": str(document.get("minimum_relevance", 0.20)),
+        "max_distance_miles": optional_value("max_distance_miles"),
+    }
+
+
+def _search_document_from_form(
+    values: dict[str, str],
+    *,
+    require_exact_phrases: bool = True,
+) -> dict:
+    name = values["name"].strip()
+    url = values["url"].strip()
+    include_any = _terms_from_form(values["include_any"])
+    if not name:
+        raise ConfigError("Search name is required")
+    if not url:
+        raise ConfigError("Marketplace URL is required")
+    if require_exact_phrases and not include_any:
+        raise ConfigError("Enter at least one exact-title phrase")
+    return {
+        "name": name,
+        "url": url,
+        "min_price": _optional_number(values["min_price"], "Minimum price"),
+        "max_price": _optional_number(values["max_price"], "Maximum price"),
+        "include_any": include_any,
+        "exclude": _terms_from_form(values["exclude"]),
+        "minimum_relevance": _optional_number(
+            values["minimum_relevance"], "Minimum relevance"
+        ),
+        "max_distance_miles": _optional_number(
+            values["max_distance_miles"], "Hard radius"
+        ),
+    }
 
 
 def _monitor_is_stale(completed_utc: str | None, interval_minutes: int) -> bool:
@@ -84,6 +160,7 @@ def create_app(config_path: Path) -> Flask:
     load_config(config_path)
     app = Flask(__name__)
     app.config["MARKETMON_CONFIG_PATH"] = config_path
+    app.config["MARKETMON_CSRF_TOKEN"] = secrets.token_urlsafe(32)
 
     @app.after_request
     def secure_response(response):
@@ -186,6 +263,93 @@ def create_app(config_path: Path) -> Flask:
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Service-Worker-Allowed"] = "/"
         return response
+
+    @app.get("/searches")
+    def searches():
+        current = load_config(app.config["MARKETMON_CONFIG_PATH"])
+        return render_template(
+            "searches.html",
+            searches=current.searches,
+            saved=request.args.get("saved"),
+        )
+
+    @app.route("/searches/<path:name>/edit", methods=("GET", "POST"))
+    def edit_search(name: str):
+        config_file = app.config["MARKETMON_CONFIG_PATH"]
+        document = search_document(config_file, name)
+        error = None
+        suggestion_report: PhraseSuggestionReport | None = None
+        if request.method == "POST":
+            supplied_token = request.form.get("csrf_token", "")
+            if not hmac.compare_digest(
+                supplied_token,
+                app.config["MARKETMON_CSRF_TOKEN"],
+            ):
+                abort(400)
+            values = {
+                field: request.form.get(field, "")
+                for field in (
+                    "name",
+                    "url",
+                    "min_price",
+                    "max_price",
+                    "include_any",
+                    "exclude",
+                    "minimum_relevance",
+                    "max_distance_miles",
+                )
+            }
+            try:
+                action = request.form.get("action", "save")
+                replacement = _search_document_from_form(
+                    values,
+                    require_exact_phrases=action != "suggest",
+                )
+                if action == "suggest":
+                    raw_config = copy.deepcopy(load_config_document(config_file))
+                    raw_config["searches"] = [replacement]
+                    draft_config = parse_config_document(raw_config, config_file)
+                    suggestion_report = asyncio.run(
+                        fetch_phrase_suggestions(
+                            draft_config,
+                            draft_config.searches[0],
+                        )
+                    )
+                    form = values
+                elif action == "save":
+                    updated_name = replace_search_document(
+                        config_file,
+                        name,
+                        replacement,
+                    )
+                else:
+                    abort(400)
+            except (
+                BrowserSessionError,
+                ConfigError,
+                GeocodingError,
+                PlaywrightError,
+            ) as caught:
+                error = str(caught)
+                form = values
+            else:
+                if action == "save":
+                    return redirect(
+                        url_for("searches", saved=updated_name), code=303
+                    )
+        else:
+            form = _search_form_values(document)
+        return (
+            render_template(
+                "edit_search.html",
+                original_name=name,
+                form=form,
+                error=error,
+                suggestion_report=suggestion_report,
+                csrf_token=app.config["MARKETMON_CSRF_TOKEN"],
+            ),
+            400 if error else 200,
+        )
 
     @app.get("/listings/<listing_id>")
     def listing_detail(listing_id: str):
