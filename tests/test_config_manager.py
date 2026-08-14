@@ -13,6 +13,8 @@ from marketplace_monitor.config_manager import (
     add_searches,
     create_config,
     remove_search,
+    replace_search_document,
+    search_document,
 )
 
 
@@ -117,3 +119,25 @@ def test_interactive_search_document_can_be_added(tmp_path: Path) -> None:
         ],
     ) == ("Example product",)
     assert load_config(config_path).searches[0].minimum_relevance == 0.20
+
+
+def test_search_document_can_be_loaded_and_edited_in_place(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    create_config(config_path)
+    original = {
+        "name": "Away Carry-On",
+        "url": "https://www.facebook.com/marketplace/search/?query=away",
+        "include_any": ["away carry on"],
+    }
+    add_search_documents(config_path, [original])
+
+    edited = search_document(config_path, "away carry-on")
+    edited["include_any"] = ["away carry-on", "away bigger carry-on"]
+
+    assert replace_search_document(config_path, "Away Carry-On", edited) == (
+        "Away Carry-On"
+    )
+    assert load_config(config_path).searches[0].include_any == (
+        "away carry-on",
+        "away bigger carry-on",
+    )

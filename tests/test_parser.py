@@ -4,6 +4,7 @@ from marketplace_monitor.parser import (
     listing_relevance_score,
     listing_from_card,
     matches_search,
+    normalize_match_text,
     parse_price_cents,
 )
 
@@ -143,6 +144,44 @@ def test_matches_search_terms_and_price() -> None:
     assert matches_search(listing, search)
     assert not matches_search(
         Listing("2", "Wanted: Flair 58", "https://example.test/2", "Flair", 42_500),
+        search,
+    )
+
+
+def test_match_normalization_ignores_punctuation_spacing_and_number_style() -> None:
+    assert normalize_match_text("CarryOn 58") == normalize_match_text(
+        "carry-on fifty-eight"
+    )
+    assert normalize_match_text("Flair58+") == normalize_match_text(
+        "Flair 58 Plus"
+    )
+    assert normalize_match_text("Model One Two") == normalize_match_text("Model 12")
+    assert normalize_match_text("One Hundred Twenty Five") == (
+        normalize_match_text("125")
+    )
+
+    search = SearchConfig(
+        name="Away Carry-On",
+        url="https://www.facebook.com/marketplace/search/?query=away",
+        include_any=("away carry-on 58",),
+        exclude=("for parts",),
+    )
+    assert matches_search(
+        Listing(
+            "1",
+            "AWAY CarryOn Fifty Eight",
+            "https://example.test/1",
+            search.name,
+        ),
+        search,
+    )
+    assert not matches_search(
+        Listing(
+            "2",
+            "Away Carry On 58 - For-Parts",
+            "https://example.test/2",
+            search.name,
+        ),
         search,
     )
 

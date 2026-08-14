@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import json
 import os
 import sys
@@ -21,6 +22,7 @@ from .config import (
     ConfigError,
     default_config_document,
     load_config,
+    load_config_document,
     parse_config_document,
 )
 from .config_manager import (
@@ -29,6 +31,8 @@ from .config_manager import (
     add_searches,
     create_config,
     remove_search,
+    replace_search_document,
+    search_document,
 )
 from .models import SearchConfig
 from .geocoding import DistanceFilter
@@ -112,10 +116,16 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--force", action="store_true", help="replace an existing file"
     )
-    init_parser.add_argument(
+    init_mode = init_parser.add_mutually_exclusive_group()
+    init_mode.add_argument(
         "--defaults",
         action="store_true",
         help="create defaults without opening the interactive editor",
+    )
+    init_mode.add_argument(
+        "--edit",
+        action="store_true",
+        help="edit the existing configuration without resetting it",
     )
 
     login_parser = subparsers.add_parser(
@@ -135,6 +145,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_parser.add_argument(
         "--replace", action="store_true", help="replace a search with the same name"
+    )
+
+    edit_parser = subparsers.add_parser(
+        "edit", help="interactively edit an active search"
+    )
+    _config_argument(edit_parser, subcommand=True)
+    edit_parser.add_argument(
+        "name", nargs="?", help="search name (prompts when omitted)"
     )
 
     list_parser = subparsers.add_parser("list", help="show active searches")
@@ -275,7 +293,9 @@ def _list_searches(args: argparse.Namespace) -> None:
 
 def _prompt_text(label: str, current: str = "") -> str:
     suffix = f" [{current}]" if current else ""
-    value = input(f"{label}{suffix}: ").strip()
+    value = input(f"{label}{suffix} (B to go back): ").strip()
+    if value.casefold() in {"b", "back"}:
+        return current
     return value or current
 
 
@@ -289,8 +309,10 @@ def _prompt_number(
 ) -> int | float | None:
     while True:
         shown = "none" if current is None else str(current)
-        value = input(f"{label} [{shown}]: ").strip()
+        value = input(f"{label} [{shown}] (B to go back): ").strip()
         if not value:
+            return current
+        if value.casefold() in {"b", "back"}:
             return current
         if allow_none and value.casefold() in {"none", "off"}:
             return None
@@ -308,8 +330,10 @@ def _prompt_number(
 def _prompt_bool(label: str, current: bool) -> bool:
     while True:
         default = "Y/n" if current else "y/N"
-        value = input(f"{label} [{default}]: ").strip().casefold()
+        value = input(f"{label} [{default}] (B to go back): ").strip().casefold()
         if not value:
+            return current
+        if value in {"b", "back"}:
             return current
         if value in {"y", "yes", "true", "on"}:
             return True
@@ -324,8 +348,12 @@ def _prompt_terms(
     default: tuple[str, ...] = (),
 ) -> list[str]:
     shown = ", ".join(default) if default else "none"
-    value = input(f"{label}, comma-separated [{shown}]: ").strip()
+    value = input(
+        f"{label}, comma-separated [{shown}] (B to go back): "
+    ).strip()
     if not value:
+        return list(default)
+    if value.casefold() in {"b", "back"}:
         return list(default)
     if value.casefold() in {"none", "off"}:
         return []
@@ -354,8 +382,45 @@ def _quiet_hours_value(document: dict[str, Any]) -> str:
     return f"{quiet.get('start')}–{quiet.get('end')}"
 
 
-def _interactive_config(path: Path) -> dict[str, Any] | None:
+def _interactive_config(
+    path: Path,
+    initial: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     document = default_config_document()
+    if initial is not None:
+        defaults = copy.deepcopy(document)
+        document.update(copy.deepcopy(initial))
+        initial_browser = initial.get("browser", {})
+        initial_notifications = initial.get("notifications", {})
+        initial_ntfy = (
+            initial_notifications.get("ntfy", {})
+            if isinstance(initial_notifications, dict)
+            else {}
+        )
+        document["browser"] = {
+            **defaults["browser"],
+            **(
+                copy.deepcopy(initial_browser)
+                if isinstance(initial_browser, dict)
+                else {}
+            ),
+        }
+        document["notifications"] = {
+            **defaults["notifications"],
+            **(
+                copy.deepcopy(initial_notifications)
+                if isinstance(initial_notifications, dict)
+                else {}
+            ),
+            "ntfy": {
+                **defaults["notifications"]["ntfy"],
+                **(
+                    copy.deepcopy(initial_ntfy)
+                    if isinstance(initial_ntfy, dict)
+                    else {}
+                ),
+            },
+        }
     browser = document["browser"]
     notifications = document["notifications"]
     ntfy = notifications["ntfy"]
@@ -388,7 +453,8 @@ def _interactive_config(path: Path) -> dict[str, Any] | None:
         print(f" 11. Page timeout: {browser['page_load_timeout_seconds']} seconds")
         print(f" 12. Scroll count: {browser['scroll_count']}")
         print(f" 13. Database: {document['database_path']}")
-        print("\n  S. Save configuration    Q. Cancel")
+        print("\nSelect any setting again to revise it; B returns from a setting prompt.")
+        print("  S. Save configuration    Q. Cancel")
         choice = input("Select a setting: ").strip().casefold()
 
         if choice == "q":
@@ -415,8 +481,13 @@ def _interactive_config(path: Path) -> dict[str, Any] | None:
             )
         elif choice == "3":
             current = _quiet_hours_value(document)
-            value = input(f"Quiet hours as HH:MM-HH:MM, or off [{current}]: ").strip()
+            value = input(
+                f"Quiet hours as HH:MM-HH:MM, or off [{current}] "
+                "(B to go back): "
+            ).strip()
             if value:
+                if value.casefold() in {"b", "back"}:
+                    continue
                 if value.casefold() in {"off", "none"}:
                     document["quiet_hours"] = None
                 else:
@@ -448,10 +519,15 @@ def _interactive_config(path: Path) -> dict[str, Any] | None:
             )
         elif choice == "6":
             provider = (
-                input(f"Provider: console or ntfy [{notifications['provider']}]: ")
+                input(
+                    f"Provider: console or ntfy [{notifications['provider']}] "
+                    "(B to go back): "
+                )
                 .strip()
                 .casefold()
             )
+            if provider in {"b", "back"}:
+                continue
             if provider in {"console", "ntfy"}:
                 notifications["provider"] = provider
             elif provider:
@@ -487,7 +563,9 @@ def _interactive_config(path: Path) -> dict[str, Any] | None:
             print("Select a setting number, S to save, or Q to cancel.")
 
 
-def _interactive_search() -> dict[str, Any] | None:
+def _interactive_search(
+    initial: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     search: dict[str, Any] = {
         "name": "",
         "url": "",
@@ -498,6 +576,8 @@ def _interactive_search() -> dict[str, Any] | None:
         "include_any": [],
         "exclude": ["wanted", "looking for", "broken", "for parts", "parts only"],
     }
+    if initial is not None:
+        search.update(copy.deepcopy(initial))
     while True:
         _clear_interactive_screen()
         print("\nMarketplace search")
@@ -516,7 +596,8 @@ def _interactive_search() -> dict[str, Any] | None:
         print(
             f"  8. Hard radius in miles: {_display_value(search['max_distance_miles'])}"
         )
-        print("\n  S. Save search    Q. Cancel")
+        print("\nSelect any setting again to revise it; B returns from a setting prompt.")
+        print("  S. Save search    Q. Cancel")
         choice = input("Select a setting: ").strip().casefold()
         if choice == "q":
             return None
@@ -572,6 +653,28 @@ def _interactive_search() -> dict[str, Any] | None:
             )
         else:
             print("Select a setting number, S to save, or Q to cancel.")
+
+
+def _choose_search_to_edit(config_path: Path) -> str | None:
+    searches = active_searches(config_path)
+    if not searches:
+        raise ConfigError("No active searches to edit.")
+    if len(searches) == 1:
+        return searches[0].name
+    print("Active searches:")
+    for index, search in enumerate(searches, start=1):
+        print(f"  {index}. {search.name}")
+    while True:
+        choice = input("Select a search number, or Q to cancel: ").strip().casefold()
+        if choice == "q":
+            return None
+        try:
+            selected = int(choice)
+            if not 1 <= selected <= len(searches):
+                raise ValueError
+            return searches[selected - 1].name
+        except ValueError:
+            print("Select a listed search number, or Q to cancel.")
 
 
 async def _run_browser_command(args: argparse.Namespace) -> None:
@@ -682,17 +785,27 @@ def _run_service_command(args: argparse.Namespace) -> None:
 
 def _run_management_command(args: argparse.Namespace) -> bool:
     if args.command == "init":
-        document = None if args.defaults else _interactive_config(args.config)
+        initial = None
+        if args.edit:
+            initial = load_config_document(args.config)
+        document = (
+            None
+            if args.defaults
+            else _interactive_config(args.config, initial=initial)
+        )
         if document is None and not args.defaults:
             print("Cancelled; no configuration was created.")
             return True
         destination = create_config(
             args.config,
-            force=args.force,
+            force=args.force or args.edit,
             document=document,
         )
-        print(f"Created {destination}")
-        print("Next: run 'marketmon login', then 'marketmon add'.")
+        if args.edit:
+            print(f"Updated {destination}")
+        else:
+            print(f"Created {destination}")
+            print("Next: run 'marketmon login', then 'marketmon add'.")
         return True
     if args.command == "add":
         if args.source is None:
@@ -708,6 +821,17 @@ def _run_management_command(args: argparse.Namespace) -> bool:
         else:
             names = add_searches(args.config, args.source, replace=args.replace)
         print("Activated: " + ", ".join(names))
+        return True
+    if args.command == "edit":
+        name = args.name or _choose_search_to_edit(args.config)
+        if name is None:
+            print("Cancelled; no search was changed.")
+            return True
+        updated = _interactive_search(search_document(args.config, name))
+        if updated is None:
+            print("Cancelled; no search was changed.")
+            return True
+        print(f"Updated: {replace_search_document(args.config, name, updated)}")
         return True
     if args.command == "list":
         _list_searches(args)

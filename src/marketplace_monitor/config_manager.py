@@ -121,6 +121,64 @@ def add_search_documents(
     return tuple(added)
 
 
+def search_document(config_path: str | Path, name: str) -> dict[str, Any]:
+    document = load_config_document(config_path)
+    existing = document.get("searches")
+    if not isinstance(existing, list):
+        raise ConfigError("searches must be a list")
+    key = name.strip().casefold()
+    match = next(
+        (
+            search
+            for search in existing
+            if isinstance(search, dict)
+            and str(search.get("name", "")).strip().casefold() == key
+        ),
+        None,
+    )
+    if match is None:
+        raise ConfigError(f"Active search not found: {name}")
+    return dict(match)
+
+
+def replace_search_document(
+    config_path: str | Path,
+    original_name: str,
+    replacement: dict[str, Any],
+) -> str:
+    destination = Path(config_path)
+    app_config = load_config(destination)
+    document = load_config_document(destination)
+    existing = document.get("searches")
+    if not isinstance(existing, list):
+        raise ConfigError("searches must be a list")
+    key = original_name.strip().casefold()
+    position = next(
+        (
+            index
+            for index, search in enumerate(existing)
+            if isinstance(search, dict)
+            and str(search.get("name", "")).strip().casefold() == key
+        ),
+        None,
+    )
+    if position is None:
+        raise ConfigError(f"Active search not found: {original_name}")
+
+    updated = list(existing)
+    updated[position] = replacement
+    candidate = dict(document)
+    candidate["searches"] = updated
+    parse_config_document(candidate, destination)
+    _write_document(destination, candidate)
+
+    replacement_name = str(replacement.get("name", "")).strip()
+    if replacement_name.casefold() != key:
+        with ListingStore(app_config.database_path) as store:
+            store.cancel_pending_search(original_name)
+    return replacement_name
+
+
 def remove_search(config_path: str | Path, name: str) -> str:
     destination = Path(config_path)
     app_config = load_config(destination)

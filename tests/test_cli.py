@@ -6,10 +6,12 @@ import marketplace_monitor.cli as cli
 from marketplace_monitor.cli import (
     _interactive_config,
     _interactive_search,
+    _run_management_command,
     _select_searches,
     build_parser,
 )
-from marketplace_monitor.config import ConfigError
+from marketplace_monitor.config import ConfigError, load_config
+from marketplace_monitor.config_manager import add_search_documents, create_config
 from marketplace_monitor.models import SearchConfig
 
 
@@ -42,12 +44,24 @@ def test_add_supports_interactive_and_yaml_modes() -> None:
     assert imported.replace
 
 
+def test_edit_accepts_an_optional_search_name() -> None:
+    parser = build_parser()
+    prompted = parser.parse_args(["edit", "-c", "active.yaml"])
+    named = parser.parse_args(
+        ["edit", "Away Carry-On Luggage", "-c", "active.yaml"]
+    )
+    assert prompted.name is None
+    assert named.name == "Away Carry-On Luggage"
+
+
 def test_init_supports_interactive_and_default_modes() -> None:
     parser = build_parser()
     interactive = parser.parse_args(["init", "-c", "active.yaml"])
     defaults = parser.parse_args(["init", "--defaults"])
+    edited = parser.parse_args(["init", "--edit"])
     assert not interactive.defaults
     assert defaults.defaults
+    assert edited.edit
 
 
 def test_check_is_read_only_report_command() -> None:
@@ -137,6 +151,47 @@ def test_interactive_search_collects_defaults(monkeypatch) -> None:
     assert "broken" in search["exclude"]
 
 
+def test_interactive_search_can_go_back_without_changing_a_value(monkeypatch) -> None:
+    initial = {
+        "name": "Away Carry-On Luggage",
+        "url": "https://www.facebook.com/marketplace/search/?query=away",
+        "include_any": ["away carry on"],
+    }
+    answers = iter(["5", "b", "s"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    search = _interactive_search(initial)
+
+    assert search is not None
+    assert search["include_any"] == ["away carry on"]
+
+
+def test_edit_command_updates_a_saved_search(monkeypatch, tmp_path) -> None:
+    config = tmp_path / "config.yaml"
+    create_config(config)
+    add_search_documents(
+        config,
+        [
+            {
+                "name": "Away Carry-On",
+                "url": "https://www.facebook.com/marketplace/search/?query=away",
+                "include_any": ["away carry on"],
+            }
+        ],
+    )
+    answers = iter(["5", "away carry-on, away bigger carry-on", "s"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    args = build_parser().parse_args(
+        ["edit", "Away Carry-On", "-c", str(config)]
+    )
+
+    assert _run_management_command(args)
+    assert load_config(config).searches[0].include_any == (
+        "away carry-on",
+        "away bigger carry-on",
+    )
+
+
 def test_interactive_config_can_edit_settings_in_any_order(
     monkeypatch, tmp_path
 ) -> None:
@@ -162,6 +217,30 @@ def test_interactive_config_can_edit_settings_in_any_order(
     assert document["notifications"]["provider"] == "ntfy"
     assert document["notifications"]["ntfy"]["topic"] == "my-private-topic"
     assert document["quiet_hours"] == {"start": "22:00", "end": "07:00"}
+
+
+def test_interactive_config_edit_preserves_existing_searches(
+    monkeypatch, tmp_path
+) -> None:
+    initial = {
+        "browser": {},
+        "notifications": {"provider": "console", "ntfy": {}},
+        "searches": [
+            {
+                "name": "Away Carry-On",
+                "url": "https://www.facebook.com/marketplace/search/?query=away",
+                "include_any": ["away carry on"],
+            }
+        ],
+    }
+    answers = iter(["1", "b", "s"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    document = _interactive_config(tmp_path / "config.yaml", initial=initial)
+
+    assert document is not None
+    assert document["check_interval_minutes"] == 10
+    assert document["searches"] == initial["searches"]
 
 
 def test_search_selection_is_case_insensitive_and_deduplicated() -> None:

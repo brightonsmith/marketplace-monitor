@@ -13,8 +13,10 @@ The public CLI has one command for each job:
 
 ```text
 marketmon init                         create the configuration
+marketmon init --edit                  edit the existing configuration
 marketmon login                        save and verify a Facebook session
 marketmon add [SEARCH.yaml]             add a search interactively or from YAML
+marketmon edit [SEARCH NAME]            edit an active search interactively
 marketmon list                          list active searches
 marketmon remove "SEARCH NAME"          remove a search
 marketmon feedback LISTING_ID STATE      save interested/dismissed feedback
@@ -75,6 +77,9 @@ router port forwarding is required.
 
 `-c/--config` may appear before or after a top-level command. Relative browser
 profile and database paths are resolved from the configuration file's directory.
+The `init`, `init --edit`, `add`, and `edit` menus allow settings to be selected
+again before saving. Enter `B` at an individual setting prompt to return to the
+summary without changing that value.
 
 ## Raspberry Pi quick start
 
@@ -99,8 +104,10 @@ marketmon init
 
 `init` opens a numbered editor showing all monitoring, notification, browser,
 and storage settings. Select settings in any order, then choose `S` to validate
-and save. Use `Q` to cancel without creating a file. For an unattended install
-that should use every default, run `marketmon init --defaults`.
+and save. Enter `B` at a setting prompt to return without changing it, or use
+`Q` to cancel without creating a file. Run `marketmon init --edit` to reopen the
+existing configuration with its current values and searches intact. For an
+unattended install that should use every default, run `marketmon init --defaults`.
 
 When no local `config.yaml` exists, Marketmon defaults to
 `~/.config/marketmon/config.yaml`. An existing local config remains supported.
@@ -157,9 +164,26 @@ marketmon add
 The command opens a numbered editor showing the name, URL, optional local price
 bounds, exact title phrases, exclusions, relevance threshold, and an optional
 hard radius. Select fields
-in any order, then choose `S` to validate and save. Title matching is
-case-insensitive. A short distinctive phrase such as `flair 58` also matches
-longer titles such as `Flair 58 Plus Espresso Maker`.
+in any order, then choose `S` to validate and save. Enter `B` at a setting
+prompt to return to the summary without changing it.
+
+Edit a saved search without recreating it:
+
+```bash
+marketmon edit "Flair 58 Plus"
+```
+
+When the name is omitted, Marketmon displays a numbered list of active searches.
+The watcher reloads saved edits before its next cycle; no service restart is
+required.
+
+Exact and excluded title phrases are normalized before comparison. Matching is
+case-, punctuation-, and spacing-invariant, joins split product names, and
+normalizes written English numbers. For example, `CarryOn`, `carry-on`, and
+`carry on` are equivalent, as are `58` and `fifty-eight`. This is deterministic
+text normalization rather than fuzzy semantic matching, so unrelated synonyms
+do not silently become exact matches. A short distinctive phrase such as
+`flair 58` still matches longer titles such as `Flair 58 Plus Espresso Maker`.
 
 Inspect the active searches and current results:
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from math import log, sqrt
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
@@ -10,6 +11,40 @@ from .models import Listing, SearchConfig
 ITEM_ID_PATTERN = re.compile(r"/marketplace/item/(\d+)")
 PRICE_PATTERN = re.compile(r"(?:US\$|\$)\s*([0-9][0-9,]*(?:\.\d{1,2})?)", re.IGNORECASE)
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+NUMBER_UNITS = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+}
+NUMBER_TENS = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+NUMBER_SCALES = {"hundred": 100, "thousand": 1_000}
+NUMBER_WORDS = set(NUMBER_UNITS) | set(NUMBER_TENS) | set(NUMBER_SCALES)
 
 
 def canonicalize_listing_url(url: str) -> str:
@@ -32,22 +67,103 @@ def parse_price_cents(text: str) -> int | None:
     return round(float(match.group(1).replace(",", "")) * 100)
 
 
+def _number_value(words: list[str]) -> int:
+    total = 0
+    current = 0
+    for word in words:
+        if word in NUMBER_UNITS:
+            current += NUMBER_UNITS[word]
+        elif word in NUMBER_TENS:
+            current += NUMBER_TENS[word]
+        elif word == "hundred":
+            current = max(current, 1) * NUMBER_SCALES[word]
+        elif word == "thousand":
+            total += max(current, 1) * NUMBER_SCALES[word]
+            current = 0
+    return total + current
+
+
+def _normalize_number_words(words: tuple[str, ...]) -> tuple[str, ...]:
+    def kind(word: str) -> str:
+        if word in NUMBER_UNITS:
+            return "unit"
+        if word in NUMBER_TENS:
+            return "tens"
+        return word
+
+    def can_follow(previous: str, word: str) -> bool:
+        current = kind(word)
+        if current == "unit":
+            return previous in {"tens", "hundred", "thousand"}
+        if current == "tens":
+            return previous in {"hundred", "thousand"}
+        if current == "hundred":
+            return previous == "unit"
+        if current == "thousand":
+            return previous in {"unit", "tens", "hundred"}
+        return False
+
+    normalized: list[str] = []
+    index = 0
+    while index < len(words):
+        if words[index] not in NUMBER_WORDS:
+            normalized.append(words[index])
+            index += 1
+            continue
+        end = index + 1
+        previous = kind(words[index])
+        while end < len(words):
+            if words[end] == "and":
+                if (
+                    previous not in {"hundred", "thousand"}
+                    or end + 1 >= len(words)
+                    or words[end + 1] not in NUMBER_WORDS
+                ):
+                    break
+                end += 1
+                continue
+            if words[end] not in NUMBER_WORDS or not can_follow(
+                previous, words[end]
+            ):
+                break
+            previous = kind(words[end])
+            end += 1
+        number_words = [word for word in words[index:end] if word != "and"]
+        normalized.append(str(_number_value(number_words)))
+        index = end
+    return tuple(normalized)
+
+
 def _normalized_words(text: str) -> tuple[str, tuple[str, ...]]:
-    normalized = text.casefold().replace("+", " plus ")
+    normalized = unicodedata.normalize("NFKD", text.casefold()).replace(
+        "+", " plus "
+    )
+    normalized = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
     normalized = re.sub(r"(?<=[a-z])(?=\d)|(?<=\d)(?=[a-z])", " ", normalized)
-    words = tuple(TOKEN_PATTERN.findall(normalized))
+    words = _normalize_number_words(tuple(TOKEN_PATTERN.findall(normalized)))
     return " ".join(words), words
+
+
+def normalize_match_text(text: str) -> str:
+    """Return a compact key for punctuation- and spacing-invariant matching."""
+    _, words = _normalized_words(text)
+    return "".join(words)
 
 
 def _word_features(text: str) -> tuple[str, ...]:
     _, words = _normalized_words(text)
     unigrams = tuple(words)
     bigrams = tuple(f"{first} {second}" for first, second in zip(words, words[1:]))
-    return unigrams + bigrams
+    compounds = tuple(f"{first}{second}" for first, second in zip(words, words[1:]))
+    return unigrams + bigrams + compounds
 
 
 def _character_features(text: str) -> tuple[str, ...]:
-    normalized, _ = _normalized_words(text)
+    normalized = normalize_match_text(text)
     bounded = f"^{normalized}$"
     return tuple(
         bounded[index : index + width]
@@ -185,10 +301,12 @@ def listing_from_card(card: dict[str, str], search: SearchConfig) -> Listing | N
 
 
 def matches_search(listing: Listing, search: SearchConfig) -> bool:
-    title = listing.title.casefold()
-    if search.include_any and not any(term in title for term in search.include_any):
+    title = normalize_match_text(listing.title)
+    if search.include_any and not any(
+        normalize_match_text(term) in title for term in search.include_any
+    ):
         return False
-    if any(term in title for term in search.exclude):
+    if any(normalize_match_text(term) in title for term in search.exclude):
         return False
     has_price_limit = search.min_price_cents is not None or search.max_price_cents is not None
     if has_price_limit and listing.price_cents is None:
