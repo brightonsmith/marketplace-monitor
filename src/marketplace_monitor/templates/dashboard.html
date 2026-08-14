@@ -38,7 +38,7 @@
       {% if latest_run %}
         <div class="run-summary">
           <span><strong>{{ latest_run.discovered }}</strong> found</span>
-          <span><strong>{{ latest_run.matched }}</strong> exact</span>
+          <span><strong>{{ latest_run.matched }}</strong> phrase</span>
           <span><strong>{{ latest_run.new }}</strong> new</span>
         </div>
       {% endif %}
@@ -68,7 +68,7 @@
         <summary>Monitoring history</summary>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Completed</th><th>Found</th><th>Matched</th><th>New</th><th>Notified</th><th>Held</th><th>Dismissed</th></tr></thead>
+            <thead><tr><th>Completed</th><th>Found</th><th>Phrase matches</th><th>New</th><th>Notified</th><th>Held</th><th>Dismissed</th></tr></thead>
             <tbody>
               {% for run in recent_runs %}
                 <tr><td>{{ run.completed_utc[:19].replace('T', ' ') }} UTC</td><td>{{ run.discovered }}</td><td>{{ run.matched }}</td><td>{{ run.new }}</td><td>{{ run.notified }}</td><td>{{ run.held }}</td><td>{{ run.dismissed }}</td></tr>
@@ -102,9 +102,9 @@
                 <h3><a href="{{ url_for('listing_detail', listing_id=listing.listing_id) }}">{{ listing.title }}</a></h3>
                 <p class="location">{{ listing.location or 'Location unavailable' }}</p>
                 <p class="ranking">
-                  <span class="badge{% if not record.candidate.exact %} candidate{% endif %}">{{ 'Exact match' if record.candidate.exact else 'Candidate' }}</span>
+                  <span class="badge{% if not record.candidate.exact %} candidate{% endif %}">{{ 'Phrase match' if record.candidate.exact else 'Related result' }}</span>
                   {% if record.disposition == 'interested' %}<span class="badge saved">Saved</span>{% endif %}
-                  {{ '%.0f'|format(record.candidate.relevance * 100) }}% match · {{ '%.0f'|format(record.candidate.score * 100) }}% score
+                  {{ '%.0f'|format(record.candidate.relevance * 100) }}% title relevance · {{ '%.0f'|format(record.candidate.score * 100) }}% ranking
                 </p>
                 {% if not record.is_current %}<p class="availability">Not in latest search results</p>{% endif %}
                 <p class="seen">First seen {{ record.first_seen_utc[:10] }} · Last seen {{ record.last_seen_utc[:19].replace('T', ' ') }} UTC</p>

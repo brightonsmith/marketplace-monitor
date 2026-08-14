@@ -56,6 +56,10 @@ def test_dashboard_renders_rich_listing_and_updates_feedback(tmp_path: Path) -> 
     assert b"https://example.test/image.jpg" in page.data
     assert b"Monitoring history" in page.data
     assert b"Monitoring active" in page.data
+    assert b"Phrase match" in page.data
+    assert b"95% title relevance" in page.data
+    assert b"96% ranking" in page.data
+    assert b"Exact match" not in page.data
     assert b"cdn.jsdelivr.net" not in page.data
     assert b"unpkg.com" not in page.data
 
@@ -69,6 +73,8 @@ def test_dashboard_renders_rich_listing_and_updates_feedback(tmp_path: Path) -> 
     assert detail.status_code == 200
     assert b"Flair 58 Plus" in detail.data
     assert b"Open on Facebook" in detail.data
+    assert b"Phrase match" in detail.data
+    assert b"95% title relevance" in detail.data
     interested = client.get("/?view=interested&limit=10")
     assert b"Flair 58 Plus" in interested.data
 

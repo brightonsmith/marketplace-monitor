@@ -10,7 +10,7 @@
       <h1>{{ listing.title }}</h1>
       <p class="detail-price">{{ listing.price_cents|price }}</p>
       <p>{{ listing.location or 'Location unavailable' }}{% if listing.distance_miles is not none %} · {{ '%.1f'|format(listing.distance_miles) }} mi{% endif %}</p>
-      <p class="ranking"><span class="badge{% if not record.candidate.exact %} candidate{% endif %}">{{ 'Exact match' if record.candidate.exact else 'Candidate' }}</span> {% if record.disposition == 'interested' %}<span class="badge saved">Saved</span>{% endif %} {{ '%.0f'|format(record.candidate.relevance * 100) }}% match · {{ '%.0f'|format(record.candidate.score * 100) }}% score</p>
+      <p class="ranking"><span class="badge{% if not record.candidate.exact %} candidate{% endif %}">{{ 'Phrase match' if record.candidate.exact else 'Related result' }}</span> {% if record.disposition == 'interested' %}<span class="badge saved">Saved</span>{% endif %} {{ '%.0f'|format(record.candidate.relevance * 100) }}% title relevance · {{ '%.0f'|format(record.candidate.score * 100) }}% ranking</p>
       {% if not record.is_current %}<p class="availability">Not in latest search results</p>{% endif %}
       <div class="detail-actions">
         <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}">
