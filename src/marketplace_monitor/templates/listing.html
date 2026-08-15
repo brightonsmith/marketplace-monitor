@@ -20,7 +20,7 @@
           {% if record.disposition == 'interested' %}<button type="submit" name="disposition" value="clear" class="secondary">Unsave</button>{% else %}<button type="submit" name="disposition" value="dismissed" class="secondary">Dismiss</button>{% endif %}
         </form>
       </div>
-      <p class="seen">First seen {{ record.first_seen_utc[:10] }} · Last seen {{ record.last_seen_utc[:19].replace('T', ' ') }} UTC</p>
+      <p class="seen">First seen {{ record.first_seen_utc|local_datetime(display_timezone, display_time_format) }} · Last seen {{ record.last_seen_utc|local_datetime(display_timezone, display_time_format) }}</p>
       <p class="listing-id">Listing ID {{ listing.listing_id }}</p>
     </article>
   </main>

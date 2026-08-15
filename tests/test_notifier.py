@@ -107,6 +107,38 @@ def test_ntfy_listing_opens_dashboard_with_separate_facebook_action(monkeypatch)
     ]
 
 
+def test_ntfy_digest_groups_matches_and_opens_dashboard(monkeypatch) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["payload"] = json.loads(request.data)
+        return FakeResponse()
+
+    monkeypatch.setattr(notifier_module, "urlopen", fake_urlopen)
+    listings = [
+        Listing(
+            str(index),
+            f"Flair listing {index}",
+            f"https://www.facebook.com/marketplace/item/{index}",
+            "Flair",
+            index * 10_000,
+        )
+        for index in range(1, 5)
+    ]
+    notifier = NtfyNotifier(
+        "https://ntfy.sh",
+        "example-topic",
+        dashboard_url="http://marketplace-pi.example.ts.net:8000",
+    )
+
+    notifier.send_digest(listings)
+
+    assert captured["payload"]["title"] == "Marketmon · 4 new matches"
+    assert captured["payload"]["click"] == "http://marketplace-pi.example.ts.net:8000"
+    assert "Flair listing 1 · $100.00" in captured["payload"]["message"]
+    assert "+1 more" in captured["payload"]["message"]
+
+
 def test_tailscale_url_prefers_magicdns_name(monkeypatch) -> None:
     monkeypatch.setattr(notifier_module.shutil, "which", lambda _name: "/usr/bin/tailscale")
     monkeypatch.setattr(

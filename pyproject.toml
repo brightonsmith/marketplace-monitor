@@ -13,6 +13,7 @@ dependencies = [
     "geopy>=2.4,<3",
     "playwright>=1.54,<2",
     "PyYAML>=6.0,<7",
+    "tzdata>=2025.2",
 ]
 
 [project.optional-dependencies]

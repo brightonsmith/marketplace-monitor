@@ -1,4 +1,6 @@
 const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+const configuredTimeZone = document.body.dataset.timeZone || "UTC";
+const configuredTimeFormat = document.body.dataset.timeFormat || "12h";
 
 function updateRelativeTimes() {
   document.querySelectorAll("[data-relative-time]").forEach((element) => {
@@ -13,7 +15,10 @@ function updateRelativeTimes() {
     const [unit, divisor] =
       intervals.find(([, size]) => Math.abs(seconds) >= size) || ["second", 1];
     element.textContent = relativeFormatter.format(Math.round(seconds / divisor), unit);
-    element.title = new Date(timestamp).toLocaleString();
+    element.title = new Date(timestamp).toLocaleString(undefined, {
+      timeZone: configuredTimeZone,
+      hour12: configuredTimeFormat === "12h",
+    });
   });
 }
 
@@ -82,6 +87,39 @@ document.querySelectorAll(".search-form").forEach((form) => {
     form.setAttribute("aria-busy", "true");
   });
 });
+
+const intervalValues = [5, 10, 15, 30, 60, 120];
+const intervalLabels = ["Every 5 minutes", "Every 10 minutes", "Every 15 minutes", "Every 30 minutes", "Every hour", "Every 2 hours"];
+document.querySelectorAll("[data-interval-slider]").forEach((slider) => {
+  const hidden = document.querySelector("[data-interval-value]");
+  const output = document.querySelector("[data-interval-output]");
+  const update = () => {
+    const index = Number(slider.value);
+    if (hidden) hidden.value = String(intervalValues[index]);
+    if (output) output.textContent = intervalLabels[index];
+  };
+  slider.addEventListener("input", update);
+  update();
+});
+
+function updateDeliverySettings() {
+  const selected = document.querySelector('[name="delivery_mode"]:checked');
+  const digestSetting = document.querySelector("[data-digest-setting]");
+  if (digestSetting) digestSetting.hidden = selected?.value !== "digest";
+}
+document.querySelectorAll('[name="delivery_mode"]').forEach((control) =>
+  control.addEventListener("change", updateDeliverySettings),
+);
+updateDeliverySettings();
+
+const quietToggle = document.querySelector("[data-quiet-toggle]");
+const quietTimes = document.querySelector("[data-quiet-times]");
+function updateQuietHours() {
+  if (quietTimes) quietTimes.hidden = !quietToggle?.checked;
+}
+quietToggle?.addEventListener("change", updateQuietHours);
+updateQuietHours();
+
 document.addEventListener("visibilitychange", checkForUpdates);
 updateRelativeTimes();
 setInterval(updateRelativeTimes, 30_000);

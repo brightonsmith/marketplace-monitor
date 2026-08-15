@@ -16,6 +16,8 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 html { background: var(--canvas); }
 body { min-width: 320px; margin: 0; background: var(--canvas); color: var(--ink); }
 button, input, select, textarea { font: inherit; }
@@ -147,6 +149,50 @@ button, a[role="button"] { display: inline-flex; min-height: 2.65rem; align-item
 .suggestion-list span { display: grid; gap: .1rem; }
 .suggestion-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.settings-page { width: min(780px, 100%); margin: 1.5rem auto 0; }
+.settings-form { display: grid; gap: 1rem; }
+.settings-card { overflow: hidden; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); box-shadow: var(--shadow); }
+.settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.1rem .8rem; }
+.settings-heading h2 { margin: 0; font-size: 1.1rem; }
+.settings-heading > p { max-width: 310px; margin: 0; color: var(--muted); font-size: .75rem; line-height: 1.45; text-align: right; }
+.choice-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin: 0; padding: 0 1.1rem 1rem; border: 0; }
+.choice-cards label { position: relative; cursor: pointer; }
+.choice-cards input { position: absolute; opacity: 0; pointer-events: none; }
+.choice-cards span { display: grid; min-height: 100%; gap: .25rem; padding: .8rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--canvas); }
+.choice-cards strong { font-size: .82rem; }
+.choice-cards small, .setting-row small, .settings-link-card small { color: var(--muted); font-size: .7rem; font-weight: 500; line-height: 1.4; }
+.choice-cards input:checked + span { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.choice-cards input:focus-visible + span { outline: 3px solid #b9dfce; outline-offset: 2px; }
+.setting-row { display: flex; min-height: 4.2rem; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 1.1rem; padding: .85rem 0; border-top: 1px solid var(--line); }
+.setting-row > label, .setting-row > span { display: grid; gap: .2rem; }
+.setting-row strong, .settings-link-card strong { font-size: .86rem; }
+.setting-row select { width: min(220px, 46%); padding: .55rem .65rem; border: 1px solid #b9c7c0; border-radius: .6rem; background: var(--surface); color: var(--ink); }
+.switch-row { cursor: pointer; }
+.switch-row input[type="checkbox"] { position: relative; width: 3rem; height: 1.75rem; flex: 0 0 auto; margin: 0; appearance: none; border: 0; border-radius: 999px; background: #bec8c3; cursor: pointer; transition: background .15s ease; }
+.switch-row input[type="checkbox"]::after { position: absolute; top: .2rem; left: .2rem; width: 1.35rem; height: 1.35rem; border-radius: 50%; background: white; box-shadow: 0 2px 5px rgb(0 0 0 / 18%); content: ""; transition: transform .15s ease; }
+.switch-row input[type="checkbox"]:checked { background: var(--brand); }
+.switch-row input[type="checkbox"]:checked::after { transform: translateX(1.25rem); }
+.interval-control { margin: 0 1.1rem; padding: .4rem 0 1.1rem; }
+.interval-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: .7rem; font-size: .86rem; }
+.interval-heading output { color: var(--brand); font-size: .8rem; font-weight: 800; }
+.interval-control input[type="range"] { width: 100%; margin: 0; accent-color: var(--brand); }
+.interval-labels { display: flex; justify-content: space-between; margin-top: .25rem; color: var(--muted); font-size: .64rem; }
+.quiet-time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin: 0 1.1rem 1rem; padding-top: .2rem; }
+.quiet-time-grid label { display: grid; gap: .35rem; color: var(--muted); font-size: .7rem; font-weight: 750; }
+.quiet-time-grid input { width: 100%; padding: .65rem; border: 1px solid #b9c7c0; border-radius: .65rem; background: var(--surface); color: var(--ink); }
+.segmented-control { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; margin: 0 1.1rem 1rem; padding: .25rem; border: 1px solid var(--line); border-radius: .7rem; background: var(--canvas); }
+.segmented-control legend { padding: 0 0 .55rem; color: var(--muted); font-size: .72rem; font-weight: 750; }
+.segmented-control label { position: relative; cursor: pointer; }
+.segmented-control input { position: absolute; opacity: 0; }
+.segmented-control span { display: block; padding: .55rem; border-radius: .5rem; color: var(--muted); font-size: .8rem; font-weight: 750; text-align: center; }
+.segmented-control input:checked + span { background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px rgb(23 33 30 / 8%); }
+.settings-link-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.1rem; }
+.settings-link-card > div { display: grid; gap: .2rem; }
+.settings-link-card a { font-size: .82rem; font-weight: 750; text-decoration: none; white-space: nowrap; }
+.settings-link-card a span { font-size: 1.2rem; vertical-align: -.08rem; }
+.settings-actions { position: sticky; z-index: 4; bottom: max(.5rem, env(safe-area-inset-bottom)); padding: .45rem; border: 1px solid var(--line); border-radius: .85rem; background: rgb(255 255 255 / 92%); box-shadow: 0 8px 30px rgb(23 33 30 / 15%); backdrop-filter: blur(12px); }
+.settings-actions button { width: 100%; }
+
 @media (max-width: 680px) {
   .app-shell { width: min(100% - 1rem, 580px); }
   .run-summary { gap: .65rem; }
@@ -160,6 +206,11 @@ button, a[role="button"] { display: inline-flex; min-height: 2.65rem; align-item
   .form-row { grid-template-columns: 1fr; }
   .suggestion-panel { align-items: stretch; flex-direction: column; }
   .config-toolbar { align-items: stretch; flex-direction: column; }
+  .settings-heading { flex-direction: column; }
+  .settings-heading > p { max-width: none; text-align: left; }
+  .choice-cards { grid-template-columns: 1fr; }
+  .choice-cards span { min-height: auto; }
+  .setting-row select { width: min(180px, 48%); }
 }
 
 @media (prefers-reduced-motion: reduce) {

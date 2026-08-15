@@ -4,7 +4,8 @@ import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from .browser import BrowserSessionError, fetch_listings
 from .geocoding import DistanceFilter
@@ -24,6 +25,23 @@ class RunSummary:
     held: int
     status: StatusUpdate
     dismissed: int = 0
+
+
+_DIGEST_STARTED_KEY = "notification_digest_started_utc"
+
+
+def _configured_times(
+    at: datetime | None,
+    timezone_name: str,
+) -> tuple[datetime, datetime]:
+    timezone = ZoneInfo(timezone_name)
+    if at is None:
+        utc_time = datetime.now(UTC)
+    elif at.tzinfo is None:
+        utc_time = at.replace(tzinfo=timezone).astimezone(UTC)
+    else:
+        utc_time = at.astimezone(UTC)
+    return utc_time, utc_time.astimezone(timezone)
 
 
 def quiet_hours_active(quiet_hours: QuietHoursConfig | None, at: datetime) -> bool:
@@ -61,7 +79,8 @@ async def run_once(
     *,
     now: datetime | None = None,
 ) -> RunSummary:
-    quiet = quiet_hours_active(config.quiet_hours, now or datetime.now())
+    utc_now, local_now = _configured_times(now, config.timezone)
+    quiet = quiet_hours_active(config.quiet_hours, local_now)
     distance_filter = (
         DistanceFilter(config.database_path)
         if any(search.max_distance_miles is not None for search in config.searches)
@@ -127,20 +146,47 @@ async def run_once(
             if listing.search_name in baseline_searches:
                 store.mark_notified(listing.listing_id)
                 continue
-            if not store.needs_notification(listing.listing_id):
-                continue
+        pending = store.pending_listings()
+        delivery_mode = config.notifications.delivery_mode
+        if delivery_mode == "dashboard":
+            store.mark_notified_many(tuple(item.listing_id for item in pending))
+            store.delete_metadata_value(_DIGEST_STARTED_KEY)
+        elif not pending:
+            store.delete_metadata_value(_DIGEST_STARTED_KEY)
+        elif delivery_mode == "immediate":
             if quiet:
-                continue
-            notifier.send(listing)
-            store.mark_notified(listing.listing_id)
-            notified_count += 1
-        if quiet:
-            held_count = len(store.pending_listings())
+                held_count = len(pending)
+            else:
+                if len(pending) == 1:
+                    notifier.send(pending[0])
+                else:
+                    notifier.send_digest(pending)
+                store.mark_notified_many(tuple(item.listing_id for item in pending))
+                store.delete_metadata_value(_DIGEST_STARTED_KEY)
+                notified_count = len(pending)
         else:
-            for listing in store.pending_listings():
-                notifier.send(listing)
-                store.mark_notified(listing.listing_id)
-                notified_count += 1
+            started_value = store.metadata_value(_DIGEST_STARTED_KEY)
+            if started_value is None:
+                store.set_metadata_value(_DIGEST_STARTED_KEY, utc_now.isoformat())
+                digest_due = False
+            else:
+                try:
+                    digest_started = datetime.fromisoformat(started_value)
+                    if digest_started.tzinfo is None:
+                        digest_started = digest_started.replace(tzinfo=UTC)
+                except ValueError:
+                    digest_started = utc_now
+                    store.set_metadata_value(_DIGEST_STARTED_KEY, utc_now.isoformat())
+                digest_due = utc_now - digest_started >= timedelta(
+                    minutes=config.notifications.digest_interval_minutes
+                )
+            if digest_due and not quiet:
+                notifier.send_digest(pending)
+                store.mark_notified_many(tuple(item.listing_id for item in pending))
+                store.delete_metadata_value(_DIGEST_STARTED_KEY)
+                notified_count = len(pending)
+            else:
+                held_count = len(pending)
         for search_name in search_names:
             store.mark_search_initialized(search_name)
         store.mark_initialized()
@@ -182,7 +228,8 @@ def maybe_send_status(
 ) -> float:
     if summary.notified:
         return now
-    if quiet_hours_active(config.quiet_hours, wall_time or datetime.now()):
+    _, local_time = _configured_times(wall_time, config.timezone)
+    if quiet_hours_active(config.quiet_hours, local_time):
         return last_notification_at
     if config.status_interval_minutes == 0:
         return last_notification_at
@@ -226,7 +273,7 @@ async def watch(
         try:
             if config_loader is not None:
                 config = config_loader()
-            wall_time = datetime.now()
+            wall_time = datetime.now(UTC)
             summary = await run_once(config, notifier, now=wall_time)
             authentication_alert_sent = False
             check_completed_at = time.monotonic()

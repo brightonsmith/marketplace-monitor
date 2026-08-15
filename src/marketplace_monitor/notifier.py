@@ -29,6 +29,11 @@ class Notifier(ABC):
     def send(self, listing: Listing) -> None:
         raise NotImplementedError
 
+    def send_digest(self, listings: list[Listing]) -> None:
+        """Send a grouped listing alert, falling back to individual delivery."""
+        for listing in listings:
+            self.send(listing)
+
     @abstractmethod
     def send_status(self, status: StatusUpdate, *, startup: bool = False) -> None:
         raise NotImplementedError
@@ -79,6 +84,11 @@ class ConsoleNotifier(Notifier):
         location = f" · {listing.location}" if listing.location else ""
         print(f"NEW: {listing.title} · {format_price(listing.price_cents)}{location}")
         print(listing.url)
+
+    def send_digest(self, listings: list[Listing]) -> None:
+        print(f"DIGEST: {len(listings)} new Marketplace matches")
+        for listing in listings:
+            print(f"- {listing.title} · {format_price(listing.price_cents)}")
 
     def send_status(self, status: StatusUpdate, *, startup: bool = False) -> None:
         title, message, url = _status_content(status, startup=startup)
@@ -133,6 +143,25 @@ class NtfyNotifier(Notifier):
                     "clear": True,
                 }
             ]
+        self._send_payload(payload)
+
+    def send_digest(self, listings: list[Listing]) -> None:
+        if not listings:
+            return
+        noun = "match" if len(listings) == 1 else "matches"
+        preview = [
+            f"{listing.title} · {format_price(listing.price_cents)}"
+            for listing in listings[:3]
+        ]
+        if len(listings) > len(preview):
+            preview.append(f"+{len(listings) - len(preview)} more")
+        payload: dict[str, object] = {
+            "topic": self.topic,
+            "title": f"Marketmon · {len(listings)} new {noun}",
+            "message": "\n".join(preview),
+            "click": self.dashboard_url or listings[0].url,
+            "tags": ["shopping_cart"],
+        }
         self._send_payload(payload)
 
     def send_status(self, status: StatusUpdate, *, startup: bool = False) -> None:

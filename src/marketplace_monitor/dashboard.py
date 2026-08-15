@@ -8,6 +8,7 @@ import secrets
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo, available_timezones
 
 from flask import (
     Flask,
@@ -32,6 +33,7 @@ from .config_manager import (
     add_search_documents,
     replace_search_document,
     search_document,
+    update_global_settings,
 )
 from .geocoding import GeocodingError
 from .models import SearchConfig
@@ -136,6 +138,30 @@ def _monitor_is_stale(completed_utc: str | None, interval_minutes: int) -> bool:
     return datetime.now(UTC) - completed > tolerance
 
 
+def _clock_value(minutes: int) -> str:
+    hours, remainder = divmod(minutes, 60)
+    return f"{hours:02d}:{remainder:02d}"
+
+
+def _format_local_datetime(
+    value: str | None,
+    timezone_name: str,
+    time_format: str,
+) -> str:
+    if not value:
+        return ""
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    local = parsed.astimezone(ZoneInfo(timezone_name))
+    clock = "%I:%M %p" if time_format == "12h" else "%H:%M"
+    rendered = (
+        f"{local.strftime('%b')} {local.day}, {local.year} · "
+        f"{local.strftime(clock)}"
+    )
+    return rendered.replace(" 0", " ")
+
+
 def _group_listings(
     stored: list[StoredCandidate],
     searches: tuple[SearchConfig, ...],
@@ -200,6 +226,22 @@ def create_app(config_path: Path) -> Flask:
     @app.template_filter("price")
     def price_filter(value: int | None) -> str:
         return format_price(value)
+
+    @app.template_filter("local_datetime")
+    def local_datetime_filter(
+        value: str | None,
+        timezone_name: str,
+        time_format: str,
+    ) -> str:
+        return _format_local_datetime(value, timezone_name, time_format)
+
+    @app.context_processor
+    def display_preferences():
+        current = load_config(app.config["MARKETMON_CONFIG_PATH"])
+        return {
+            "display_timezone": current.timezone,
+            "display_time_format": current.time_format,
+        }
 
     @app.get("/")
     def index():
@@ -279,6 +321,73 @@ def create_app(config_path: Path) -> Flask:
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Service-Worker-Allowed"] = "/"
         return response
+
+    @app.route("/settings", methods=("GET", "POST"))
+    def settings():
+        config_file = app.config["MARKETMON_CONFIG_PATH"]
+        error = None
+        if request.method == "POST":
+            supplied_token = request.form.get("csrf_token", "")
+            if not hmac.compare_digest(
+                supplied_token,
+                app.config["MARKETMON_CSRF_TOKEN"],
+            ):
+                abort(400)
+            try:
+                check_interval = int(request.form.get("check_interval_minutes", ""))
+                status_interval = int(
+                    request.form.get("status_interval_minutes", "")
+                )
+                digest_interval = int(
+                    request.form.get("digest_interval_minutes", "")
+                )
+                if check_interval not in {5, 10, 15, 30, 60, 120}:
+                    raise ConfigError("Select a supported Marketplace check interval")
+                if status_interval not in {0, 60, 360, 1440}:
+                    raise ConfigError("Select a supported status update interval")
+                if digest_interval not in {30, 60, 180, 1440}:
+                    raise ConfigError("Select a supported digest interval")
+                quiet_hours = None
+                if request.form.get("quiet_hours_enabled") == "on":
+                    quiet_hours = {
+                        "start": request.form.get("quiet_hours_start", ""),
+                        "end": request.form.get("quiet_hours_end", ""),
+                    }
+                update_global_settings(
+                    config_file,
+                    check_interval_minutes=check_interval,
+                    delivery_mode=request.form.get("delivery_mode", ""),
+                    digest_interval_minutes=digest_interval,
+                    status_interval_minutes=status_interval,
+                    notify_on_startup=request.form.get("notify_on_startup") == "on",
+                    quiet_hours=quiet_hours,
+                    timezone=request.form.get("timezone", ""),
+                    time_format=request.form.get("time_format", ""),
+                )
+            except (ConfigError, ValueError) as caught:
+                error = str(caught)
+            else:
+                return redirect(url_for("settings", saved="1"), code=303)
+
+        current = load_config(config_file)
+        quiet_hours = current.quiet_hours
+        return (
+            render_template(
+                "settings.html",
+                config=current,
+                quiet_hours_start=(
+                    _clock_value(quiet_hours.start_minutes) if quiet_hours else "22:00"
+                ),
+                quiet_hours_end=(
+                    _clock_value(quiet_hours.end_minutes) if quiet_hours else "07:00"
+                ),
+                timezone_options=sorted(available_timezones()),
+                csrf_token=app.config["MARKETMON_CSRF_TOKEN"],
+                saved=request.args.get("saved") == "1",
+                error=error,
+            ),
+            400 if error else 200,
+        )
 
     @app.get("/searches")
     def searches():

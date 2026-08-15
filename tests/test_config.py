@@ -231,3 +231,63 @@ searches:
     )
     with pytest.raises(ConfigError, match="HH:MM"):
         load_config(path)
+
+
+def test_load_config_parses_notification_delivery_and_display_preferences(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+timezone: America/Denver
+time_format: 24h
+notifications:
+  provider: console
+  delivery_mode: digest
+  digest_interval_minutes: 180
+searches: []
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config.timezone == "America/Denver"
+    assert config.time_format == "24h"
+    assert config.notifications.delivery_mode == "digest"
+    assert config.notifications.digest_interval_minutes == 180
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("timezone", "Mars/Olympus_Mons", "Unknown timezone"),
+        ("time_format", "military", "time_format"),
+    ],
+)
+def test_load_config_rejects_invalid_display_preferences(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(f"{field}: {value}\nsearches: []\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(path)
+
+
+@pytest.mark.parametrize("mode", ["sometimes", "muted"])
+def test_load_config_rejects_unknown_notification_delivery(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"notifications:\n  delivery_mode: {mode}\nsearches: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="delivery_mode"):
+        load_config(path)

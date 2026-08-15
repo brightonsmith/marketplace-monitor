@@ -15,6 +15,7 @@ from marketplace_monitor.config_manager import (
     remove_search,
     replace_search_document,
     search_document,
+    update_global_settings,
 )
 
 
@@ -141,3 +142,41 @@ def test_search_document_can_be_loaded_and_edited_in_place(tmp_path: Path) -> No
         "away carry-on",
         "away bigger carry-on",
     )
+
+
+def test_global_settings_update_preserves_searches_and_notification_provider(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    create_config(config_path)
+    add_search_documents(
+        config_path,
+        [
+            {
+                "name": "Flair",
+                "url": "https://www.facebook.com/marketplace/search/?query=flair",
+            }
+        ],
+    )
+
+    update_global_settings(
+        config_path,
+        check_interval_minutes=30,
+        delivery_mode="digest",
+        digest_interval_minutes=60,
+        status_interval_minutes=0,
+        notify_on_startup=False,
+        quiet_hours={"start": "22:00", "end": "07:00"},
+        timezone="America/Denver",
+        time_format="12h",
+    )
+
+    updated = load_config(config_path)
+    assert [search.name for search in updated.searches] == ["Flair"]
+    assert updated.notifications.provider == "console"
+    assert updated.notifications.delivery_mode == "digest"
+    assert updated.check_interval_minutes == 30
+    assert updated.status_interval_minutes == 0
+    assert not updated.notify_on_startup
+    assert updated.timezone == "America/Denver"
+    assert updated.quiet_hours is not None

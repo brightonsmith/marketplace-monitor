@@ -169,7 +169,8 @@ def test_dashboard_lists_and_edits_search_configuration(tmp_path: Path) -> None:
     client = app.test_client()
 
     listing_page = client.get("/")
-    assert b"Search configuration" in listing_page.data
+    assert b'aria-label="Settings"' in listing_page.data
+    assert b'href="/settings"' in listing_page.data
     assert b'<svg viewBox="0 0 24 24"' in listing_page.data
     assert "⚙".encode() not in listing_page.data
 
@@ -210,6 +211,57 @@ def test_dashboard_lists_and_edits_search_configuration(tmp_path: Path) -> None:
     assert updated.exclude == ("wanted", "broken")
     assert updated.minimum_relevance == 0.3
     assert updated.max_distance_miles == 40
+
+
+def test_dashboard_global_settings_page_updates_monitor_preferences(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "config.yaml"
+    _config(config, tmp_path / "marketplace.db")
+    app = create_app(config)
+    client = app.test_client()
+
+    page = client.get("/settings")
+    assert page.status_code == 200
+    assert b"New listing alerts" in page.data
+    assert b"Dashboard only" in page.data
+    assert b"Marketplace checks" in page.data
+    assert b"Manage searches" in page.data
+
+    forged = client.post("/settings", data={"csrf_token": "wrong"})
+    assert forged.status_code == 400
+
+    response = client.post(
+        "/settings",
+        data={
+            "csrf_token": app.config["MARKETMON_CSRF_TOKEN"],
+            "delivery_mode": "digest",
+            "digest_interval_minutes": "60",
+            "status_interval_minutes": "0",
+            "check_interval_minutes": "30",
+            "quiet_hours_enabled": "on",
+            "quiet_hours_start": "22:00",
+            "quiet_hours_end": "07:00",
+            "timezone": "America/Denver",
+            "time_format": "24h",
+        },
+    )
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/settings?saved=1"
+    updated = load_config(config)
+    assert updated.check_interval_minutes == 30
+    assert updated.notifications.delivery_mode == "digest"
+    assert updated.notifications.digest_interval_minutes == 60
+    assert updated.status_interval_minutes == 0
+    assert not updated.notify_on_startup
+    assert updated.timezone == "America/Denver"
+    assert updated.time_format == "24h"
+    assert updated.quiet_hours is not None
+
+    saved = client.get(response.headers["Location"])
+    assert b"Settings saved" in saved.data
+    assert b'data-time-zone="America/Denver"' in saved.data
 
 
 def test_dashboard_adds_a_search_from_the_web_form(tmp_path: Path) -> None:

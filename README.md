@@ -55,10 +55,12 @@ dismissed views, per-search result limits, persistent feedback controls, and
 monitoring history. Selecting **Interested** saves the listing before opening
 the Facebook listing. Saved listings remain in the dashboard when they disappear
 from the latest search and are updated if they reappear with changed details.
-The gear button opens a mobile search-configuration screen showing each search's
-URL, filters, and title phrases. Searches can be added or edited there. Changes
-are validated and written atomically, and the watcher uses them on its next cycle
-without a service restart. Each form also has **Analyze live results**, which
+The gear button opens a mobile settings screen for listing-alert delivery,
+digest cadence, status updates, scan frequency, quiet hours, timezone, and time
+format. Its **Manage searches** row opens the search-configuration screen showing
+each search's URL, filters, and title phrases. Settings and searches are validated
+and written atomically, and the watcher uses them on its next cycle without a
+service restart. Each search form also has **Analyze live results**, which
 displays ranked phrase suggestions with counts and example titles and can add
 selected phrases before saving.
 
@@ -282,9 +284,9 @@ marketmon service restart
 marketmon service uninstall
 ```
 
-Changing searches does not require a restart because `watch` reloads the config
-before every cycle. Restart after changing browser, notification, interval, or
-service environment settings.
+Dashboard settings and searches do not require a restart because `watch` reloads
+the config before every cycle. Restart after changing browser, notification
+provider credentials, or service environment settings.
 
 If an older system-wide `/etc/systemd/system/marketmon.service` is already
 running, stop and disable it before installing the user service. Marketmon blocks
@@ -325,12 +327,17 @@ stable machine-readable output.
 ## Notifications and failure behavior
 
 - Matching listing alerts use the configured provider.
+- `notifications.delivery_mode` controls whether new matches are sent
+  immediately, grouped into a digest, or retained only in the dashboard.
+- Digest cadence can be 30 minutes, 1 hour, 3 hours, or daily. Its schedule is
+  stored in SQLite, so a watcher restart does not lose waiting matches.
 - `notify_on_startup: true` sends a startup summary after the first successful
   cycle. Startup notifications bypass quiet hours because they confirm that the
   process actually started.
 - Status heartbeats honor `status_interval_minutes` and quiet hours.
 - Matching listings found during quiet hours remain pending in SQLite and are
-  delivered after quiet hours end.
+  delivered after quiet hours end. Multiple waiting matches are sent as one
+  summary rather than a burst of individual notifications.
 - An expired Facebook session, login redirect, checkpoint, or two-factor prompt
   sends one high-priority operational alert through the configured provider.
   Monitoring continues retrying, but the alert is not repeated every cycle. Run
@@ -339,12 +346,19 @@ stable machine-readable output.
 Example quiet hours:
 
 ```yaml
+timezone: America/Denver
+time_format: 12h
+notifications:
+  delivery_mode: digest
+  digest_interval_minutes: 60
 quiet_hours:
   start: "22:00"
   end: "07:00"
 ```
 
 Remove `quiet_hours` or set it to `null` to disable the quiet period.
+Timezone names use the IANA database and automatically handle daylight-saving
+changes. Operational alerts such as an expired Facebook login remain immediate.
 
 ## Updating
 

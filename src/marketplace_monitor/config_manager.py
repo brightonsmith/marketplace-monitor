@@ -179,6 +179,45 @@ def replace_search_document(
     return replacement_name
 
 
+def update_global_settings(
+    config_path: str | Path,
+    *,
+    check_interval_minutes: int,
+    delivery_mode: str,
+    digest_interval_minutes: int,
+    status_interval_minutes: int,
+    notify_on_startup: bool,
+    quiet_hours: dict[str, str] | None,
+    timezone: str,
+    time_format: str,
+) -> None:
+    """Validate and atomically update user-facing global settings."""
+    destination = Path(config_path)
+    document = load_config_document(destination)
+    notifications = document.get("notifications", {})
+    if not isinstance(notifications, dict):
+        raise ConfigError("notifications must be a mapping")
+
+    updated_notifications = dict(notifications)
+    updated_notifications["delivery_mode"] = delivery_mode
+    updated_notifications["digest_interval_minutes"] = digest_interval_minutes
+
+    candidate = dict(document)
+    candidate.update(
+        {
+            "check_interval_minutes": check_interval_minutes,
+            "status_interval_minutes": status_interval_minutes,
+            "notify_on_startup": notify_on_startup,
+            "quiet_hours": quiet_hours,
+            "timezone": timezone,
+            "time_format": time_format,
+            "notifications": updated_notifications,
+        }
+    )
+    parse_config_document(candidate, destination)
+    _write_document(destination, candidate)
+
+
 def remove_search(config_path: str | Path, name: str) -> str:
     destination = Path(config_path)
     app_config = load_config(destination)

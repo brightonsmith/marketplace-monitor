@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Settings · Marketmon{% endblock %}
+{% block content %}
+  <header class="app-header">
+    <div class="brand-lockup">
+      <img src="{{ url_for('static', filename='app-icon.svg') }}" alt="" width="44" height="44">
+      <div>
+        <p class="eyebrow">Private marketplace monitor</p>
+        <h1>Settings</h1>
+      </div>
+    </div>
+    <a href="{{ url_for('index') }}" role="button" class="secondary header-link">← Listings</a>
+  </header>
+
+  <main class="settings-page">
+    {% if saved %}<p class="notice" role="status">Settings saved. Monitoring will use them on the next check.</p>{% endif %}
+    {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+
+    <form method="post" class="settings-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <section class="settings-card">
+        <div class="settings-heading">
+          <div>
+            <p class="eyebrow">Notifications</p>
+            <h2>New listing alerts</h2>
+          </div>
+          <p>Critical login and service alerts remain enabled.</p>
+        </div>
+
+        <fieldset class="choice-cards" data-delivery-modes>
+          <legend class="sr-only">New listing alert delivery</legend>
+          {% for value, label, description in (
+            ('immediate', 'Immediate', 'Alert as soon as a new match is found.'),
+            ('digest', 'Digest', 'Group new matches into one notification.'),
+            ('dashboard', 'Dashboard only', 'Keep matches in Marketmon without listing alerts.')
+          ) %}
+            <label>
+              <input type="radio" name="delivery_mode" value="{{ value }}" {% if config.notifications.delivery_mode == value %}checked{% endif %}>
+              <span><strong>{{ label }}</strong><small>{{ description }}</small></span>
+            </label>
+          {% endfor %}
+        </fieldset>
+
+        <div class="setting-row" data-digest-setting {% if config.notifications.delivery_mode != 'digest' %}hidden{% endif %}>
+          <label for="digest-interval"><strong>Digest frequency</strong><small>Starts when the first new match is waiting.</small></label>
+          <select id="digest-interval" name="digest_interval_minutes">
+            {% for value, label in ((30, 'Every 30 minutes'), (60, 'Every hour'), (180, 'Every 3 hours'), (1440, 'Daily')) %}
+              <option value="{{ value }}" {% if config.notifications.digest_interval_minutes == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="setting-row">
+          <label for="status-interval"><strong>Status updates</strong><small>Routine “still running” messages. The dashboard remains available when these are off.</small></label>
+          <select id="status-interval" name="status_interval_minutes">
+            {% for value, label in ((0, 'Off'), (1440, 'Daily'), (360, 'Every 6 hours'), (60, 'Hourly')) %}
+              <option value="{{ value }}" {% if config.status_interval_minutes == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <label class="setting-row switch-row">
+          <span><strong>Startup notification</strong><small>Send a confirmation whenever the watcher starts.</small></span>
+          <input type="checkbox" name="notify_on_startup" {% if config.notify_on_startup %}checked{% endif %}>
+        </label>
+      </section>
+
+      <section class="settings-card">
+        <div class="settings-heading">
+          <div>
+            <p class="eyebrow">Schedule</p>
+            <h2>Monitoring</h2>
+          </div>
+          <p>Scanning more often improves freshness but does not change which unique listings qualify.</p>
+        </div>
+
+        {% set check_options = [5, 10, 15, 30, 60, 120] %}
+        <div class="interval-control">
+          <div class="interval-heading"><strong>Marketplace checks</strong><output data-interval-output></output></div>
+          <input type="range" min="0" max="5" step="1" value="{{ check_options.index(config.check_interval_minutes) if config.check_interval_minutes in check_options else 1 }}" data-interval-slider aria-label="Marketplace check frequency">
+          <input type="hidden" name="check_interval_minutes" value="{{ config.check_interval_minutes }}" data-interval-value>
+          <div class="interval-labels" aria-hidden="true"><span>5m</span><span>10m</span><span>15m</span><span>30m</span><span>1h</span><span>2h</span></div>
+        </div>
+
+        <label class="setting-row switch-row">
+          <span><strong>Quiet hours</strong><small>Hold listing and status notifications during this window.</small></span>
+          <input type="checkbox" name="quiet_hours_enabled" data-quiet-toggle {% if config.quiet_hours %}checked{% endif %}>
+        </label>
+        <div class="quiet-time-grid" data-quiet-times {% if not config.quiet_hours %}hidden{% endif %}>
+          <label for="quiet-start">Starts<input id="quiet-start" type="time" name="quiet_hours_start" value="{{ quiet_hours_start }}"></label>
+          <label for="quiet-end">Ends<input id="quiet-end" type="time" name="quiet_hours_end" value="{{ quiet_hours_end }}"></label>
+        </div>
+      </section>
+
+      <section class="settings-card">
+        <div class="settings-heading">
+          <div>
+            <p class="eyebrow">Display</p>
+            <h2>Time and region</h2>
+          </div>
+          <p>The timezone controls both displayed timestamps and quiet hours.</p>
+        </div>
+        <div class="setting-row">
+          <label for="timezone"><strong>Timezone</strong><small>Automatically observes daylight-saving changes.</small></label>
+          <select id="timezone" name="timezone">
+            {% for option in timezone_options %}<option value="{{ option }}" {% if option == config.timezone %}selected{% endif %}>{{ option }}</option>{% endfor %}
+          </select>
+        </div>
+        <fieldset class="segmented-control">
+          <legend>Time format</legend>
+          <label><input type="radio" name="time_format" value="12h" {% if config.time_format == '12h' %}checked{% endif %}><span>12-hour</span></label>
+          <label><input type="radio" name="time_format" value="24h" {% if config.time_format == '24h' %}checked{% endif %}><span>24-hour</span></label>
+        </fieldset>
+      </section>
+
+      <section class="settings-card settings-link-card">
+        <div><strong>Searches</strong><small>Products, phrases, prices, distance, and relevance.</small></div>
+        <a href="{{ url_for('searches') }}">Manage searches <span aria-hidden="true">›</span></a>
+      </section>
+
+      <div class="settings-actions">
+        <button type="submit" class="primary">Save settings</button>
+      </div>
+    </form>
+  </main>
+{% endblock %}

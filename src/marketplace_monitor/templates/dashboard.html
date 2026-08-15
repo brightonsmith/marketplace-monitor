@@ -11,7 +11,7 @@
       </div>
     </div>
     <div class="header-actions">
-      <a href="{{ url_for('searches') }}" class="icon-button" aria-label="Search configuration" title="Search configuration">
+      <a href="{{ url_for('settings') }}" class="icon-button" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
           <circle cx="12" cy="12" r="3"></circle>
@@ -29,7 +29,7 @@
       <div class="status-copy">
         {% if latest_run %}
           <strong>{{ 'Monitoring may be delayed' if monitor_stale else 'Monitoring active' }}</strong>
-          <span>Last checked <time datetime="{{ latest_run.completed_utc }}" data-relative-time>{{ latest_run.completed_utc[:19].replace('T', ' ') }} UTC</time></span>
+          <span>Last checked <time datetime="{{ latest_run.completed_utc }}" data-relative-time>{{ latest_run.completed_utc|local_datetime(display_timezone, display_time_format) }}</time></span>
         {% else %}
           <strong>Waiting for first check</strong>
           <span>Results will appear after Marketmon completes a monitoring run.</span>
@@ -71,7 +71,7 @@
             <thead><tr><th>Completed</th><th>Found</th><th>Phrase matches</th><th>New</th><th>Notified</th><th>Held</th><th>Dismissed</th></tr></thead>
             <tbody>
               {% for run in recent_runs %}
-                <tr><td>{{ run.completed_utc[:19].replace('T', ' ') }} UTC</td><td>{{ run.discovered }}</td><td>{{ run.matched }}</td><td>{{ run.new }}</td><td>{{ run.notified }}</td><td>{{ run.held }}</td><td>{{ run.dismissed }}</td></tr>
+                <tr><td>{{ run.completed_utc|local_datetime(display_timezone, display_time_format) }}</td><td>{{ run.discovered }}</td><td>{{ run.matched }}</td><td>{{ run.new }}</td><td>{{ run.notified }}</td><td>{{ run.held }}</td><td>{{ run.dismissed }}</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -107,7 +107,7 @@
                   {{ '%.0f'|format(record.candidate.relevance * 100) }}% title relevance · {{ '%.0f'|format(record.candidate.score * 100) }}% ranking
                 </p>
                 {% if not record.is_current %}<p class="availability">Not in latest search results</p>{% endif %}
-                <p class="seen">First seen {{ record.first_seen_utc[:10] }} · Last seen {{ record.last_seen_utc[:19].replace('T', ' ') }} UTC</p>
+                <p class="seen">First seen {{ record.first_seen_utc|local_datetime(display_timezone, display_time_format) }} · Last seen {{ record.last_seen_utc|local_datetime(display_timezone, display_time_format) }}</p>
                 <div class="actions">
                   <form method="post" action="{{ url_for('feedback', listing_id=listing.listing_id) }}">
                     <input type="hidden" name="view" value="{{ view }}">

@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
     <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
   </head>
-  <body {% block body_attributes %}{% endblock %}>
+  <body data-time-zone="{{ display_timezone }}" data-time-format="{{ display_time_format }}" {% block body_attributes %}{% endblock %}>
     <div class="app-shell">
       {% block content %}{% endblock %}
     </div>

@@ -1,5 +1,6 @@
 import asyncio
-from datetime import datetime
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,7 @@ class RecordingNotifier(Notifier):
     def __init__(self, fail: bool = False):
         self.fail = fail
         self.sent: list[str] = []
+        self.digests: list[list[str]] = []
         self.statuses: list[tuple[StatusUpdate, bool]] = []
         self.errors: list[tuple[str, str]] = []
 
@@ -31,6 +33,13 @@ class RecordingNotifier(Notifier):
         if self.fail:
             raise RuntimeError("delivery failed")
         self.sent.append(listing.listing_id)
+
+    def send_digest(self, listings: list[Listing]) -> None:
+        if self.fail:
+            raise RuntimeError("delivery failed")
+        listing_ids = [listing.listing_id for listing in listings]
+        self.digests.append(listing_ids)
+        self.sent.extend(listing_ids)
 
     def send_status(self, status: StatusUpdate, *, startup: bool = False) -> None:
         if self.fail:
@@ -369,6 +378,131 @@ def test_quiet_hours_hold_listing_until_window_ends(tmp_path: Path, monkeypatch)
     assert morning.held == 0
     assert morning.notified == 1
     assert notifier.sent == ["1"]
+
+
+def test_digest_groups_pending_matches_at_the_configured_interval(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    current = [listing("1"), listing("2")]
+
+    async def fake_fetch(*_args):
+        return current
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    base = make_config(tmp_path)
+    config = replace(
+        base,
+        notify_on_first_run=True,
+        notifications=replace(
+            base.notifications,
+            delivery_mode="digest",
+            digest_interval_minutes=60,
+        ),
+    )
+    notifier = RecordingNotifier()
+
+    waiting = asyncio.run(
+        monitor_module.run_once(config, notifier, now=datetime(2026, 8, 1, 9, 0))
+    )
+    assert waiting.held == 2
+    assert notifier.digests == []
+
+    delivered = asyncio.run(
+        monitor_module.run_once(config, notifier, now=datetime(2026, 8, 1, 10, 0))
+    )
+    assert delivered.notified == 2
+    assert delivered.held == 0
+    assert notifier.digests == [["1", "2"]]
+
+
+def test_dashboard_only_suppresses_alerts_without_later_backfill(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    current = [listing("1")]
+
+    async def fake_fetch(*_args):
+        return current
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    base = make_config(tmp_path)
+    dashboard_only = replace(
+        base,
+        notify_on_first_run=True,
+        notifications=replace(base.notifications, delivery_mode="dashboard"),
+    )
+    notifier = RecordingNotifier()
+
+    first = asyncio.run(monitor_module.run_once(dashboard_only, notifier))
+    assert first.new == 1
+    assert first.notified == 0
+    assert notifier.sent == []
+
+    immediate = replace(
+        dashboard_only,
+        notifications=replace(dashboard_only.notifications, delivery_mode="immediate"),
+    )
+    second = asyncio.run(monitor_module.run_once(immediate, notifier))
+    assert second.notified == 0
+    assert notifier.sent == []
+
+
+def test_quiet_hours_release_multiple_matches_as_one_digest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    current = [listing("1"), listing("2")]
+
+    async def fake_fetch(*_args):
+        return current
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    base = make_config(tmp_path)
+    config = replace(
+        base,
+        notify_on_first_run=True,
+        quiet_hours=QuietHoursConfig(start_minutes=22 * 60, end_minutes=7 * 60),
+    )
+    notifier = RecordingNotifier()
+
+    overnight = asyncio.run(
+        monitor_module.run_once(config, notifier, now=datetime(2026, 8, 1, 23, 0))
+    )
+    assert overnight.held == 2
+
+    morning = asyncio.run(
+        monitor_module.run_once(config, notifier, now=datetime(2026, 8, 2, 7, 0))
+    )
+    assert morning.notified == 2
+    assert notifier.digests == [["1", "2"]]
+
+
+def test_quiet_hours_use_configured_timezone(tmp_path: Path, monkeypatch) -> None:
+    current = [listing("1")]
+
+    async def fake_fetch(*_args):
+        return current
+
+    monkeypatch.setattr(monitor_module, "fetch_listings", fake_fetch)
+    base = make_config(tmp_path)
+    config = replace(
+        base,
+        notify_on_first_run=True,
+        timezone="America/Denver",
+        quiet_hours=QuietHoursConfig(start_minutes=22 * 60, end_minutes=7 * 60),
+    )
+
+    summary = asyncio.run(
+        monitor_module.run_once(
+            config,
+            RecordingNotifier(),
+            now=datetime(2026, 8, 2, 4, 30, tzinfo=UTC),
+        )
+    )
+
+    assert summary.held == 1
+    assert summary.notified == 0
 
 
 def test_status_waits_during_quiet_hours(tmp_path: Path) -> None:

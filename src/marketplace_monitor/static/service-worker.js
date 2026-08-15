@@ -1,4 +1,4 @@
-const STATIC_CACHE = "marketmon-static-v1";
+const STATIC_CACHE = "marketmon-static-v2";
 const STATIC_ASSETS = [
   "/static/dashboard.css",
   "/static/dashboard.js",

@@ -54,6 +54,8 @@ class NtfyConfig:
 class NotificationConfig:
     provider: str = "console"
     ntfy: NtfyConfig = field(default_factory=NtfyConfig)
+    delivery_mode: str = "immediate"
+    digest_interval_minutes: int = 60
 
 
 @dataclass(frozen=True)
@@ -73,3 +75,5 @@ class AppConfig:
     status_interval_minutes: int = 60
     quiet_hours: QuietHoursConfig | None = None
     notify_on_startup: bool = True
+    timezone: str = "UTC"
+    time_format: str = "12h"

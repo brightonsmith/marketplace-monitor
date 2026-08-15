@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 
@@ -24,6 +26,20 @@ def _minutes_to_time(value: int) -> str:
     return f"{hours:02d}:{minutes:02d}"
 
 
+def local_timezone_name() -> str:
+    """Return the host's IANA timezone name when it can be determined."""
+    key = getattr(datetime.now().astimezone().tzinfo, "key", None)
+    if key:
+        return str(key)
+    timezone_file = Path("/etc/timezone")
+    try:
+        candidate = timezone_file.read_text(encoding="utf-8").strip()
+        ZoneInfo(candidate)
+    except (OSError, ZoneInfoNotFoundError, ValueError):
+        return "UTC"
+    return candidate
+
+
 def default_config_document() -> dict[str, Any]:
     """Return the YAML document represented by the Python model defaults."""
     defaults = AppConfig()
@@ -38,6 +54,8 @@ def default_config_document() -> dict[str, Any]:
         "database_path": str(defaults.database_path),
         "check_interval_minutes": defaults.check_interval_minutes,
         "status_interval_minutes": defaults.status_interval_minutes,
+        "timezone": local_timezone_name(),
+        "time_format": defaults.time_format,
         "quiet_hours": (
             {
                 "start": _minutes_to_time(quiet_hours.start_minutes),
@@ -50,6 +68,8 @@ def default_config_document() -> dict[str, Any]:
         "notify_on_startup": defaults.notify_on_startup,
         "notifications": {
             "provider": defaults.notifications.provider,
+            "delivery_mode": defaults.notifications.delivery_mode,
+            "digest_interval_minutes": defaults.notifications.digest_interval_minutes,
             "ntfy": {
                 "server": defaults.notifications.ntfy.server,
                 "topic": defaults.notifications.ntfy.topic,
@@ -221,6 +241,23 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
     )
     if provider == "ntfy" and not ntfy.topic:
         raise ConfigError("notifications.ntfy.topic is required for the ntfy provider")
+    delivery_mode = str(
+        notification_raw.get("delivery_mode", defaults.notifications.delivery_mode)
+    ).casefold()
+    if delivery_mode not in {"immediate", "digest", "dashboard"}:
+        raise ConfigError(
+            "notifications.delivery_mode must be 'immediate', 'digest', or 'dashboard'"
+        )
+    digest_interval = int(
+        notification_raw.get(
+            "digest_interval_minutes",
+            defaults.notifications.digest_interval_minutes,
+        )
+    )
+    if digest_interval not in {30, 60, 180, 1440}:
+        raise ConfigError(
+            "notifications.digest_interval_minutes must be 30, 60, 180, or 1440"
+        )
 
     interval = int(raw.get("check_interval_minutes", defaults.check_interval_minutes))
     if interval < 1:
@@ -231,6 +268,16 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
     )
     if status_interval < 0:
         raise ConfigError("status_interval_minutes cannot be negative")
+
+    timezone_name = str(raw.get("timezone", local_timezone_name())).strip()
+    try:
+        ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ConfigError(f"Unknown timezone: {timezone_name}") from error
+
+    time_format = str(raw.get("time_format", defaults.time_format)).casefold()
+    if time_format not in {"12h", "24h"}:
+        raise ConfigError("time_format must be '12h' or '24h'")
 
     quiet_hours_raw = raw.get("quiet_hours")
     quiet_hours = None
@@ -257,13 +304,20 @@ def parse_config_document(raw: dict[str, Any], config_path: str | Path) -> AppCo
         notify_on_first_run=bool(
             raw.get("notify_on_first_run", defaults.notify_on_first_run)
         ),
-        notifications=NotificationConfig(provider=provider, ntfy=ntfy),
+        notifications=NotificationConfig(
+            provider=provider,
+            ntfy=ntfy,
+            delivery_mode=delivery_mode,
+            digest_interval_minutes=digest_interval,
+        ),
         searches=tuple(searches),
         status_interval_minutes=status_interval,
         quiet_hours=quiet_hours,
         notify_on_startup=bool(
             raw.get("notify_on_startup", defaults.notify_on_startup)
         ),
+        timezone=timezone_name,
+        time_format=time_format,
     )
 
 

@@ -233,11 +233,37 @@ class ListingStore:
         return is_new
 
     def mark_notified(self, listing_id: str) -> None:
+        self.mark_notified_many((listing_id,))
+
+    def mark_notified_many(self, listing_ids: tuple[str, ...]) -> None:
+        if not listing_ids:
+            return
         now = datetime.now(UTC).isoformat()
         self.connection.execute(
-            "UPDATE listings SET notified_utc = ? WHERE listing_id = ?",
-            (now, listing_id),
+            f"UPDATE listings SET notified_utc = ? WHERE listing_id IN "
+            f"({','.join('?' for _ in listing_ids)})",
+            (now, *listing_ids),
         )
+        self.connection.commit()
+
+    def metadata_value(self, key: str) -> str | None:
+        row = self.connection.execute(
+            "SELECT value FROM metadata WHERE key = ?", (key,)
+        ).fetchone()
+        return row["value"] if row else None
+
+    def set_metadata_value(self, key: str, value: str) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO metadata (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, value),
+        )
+        self.connection.commit()
+
+    def delete_metadata_value(self, key: str) -> None:
+        self.connection.execute("DELETE FROM metadata WHERE key = ?", (key,))
         self.connection.commit()
 
     def needs_notification(self, listing_id: str) -> bool:
