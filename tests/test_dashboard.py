@@ -139,6 +139,11 @@ def test_dashboard_status_and_installable_assets(tmp_path: Path) -> None:
     assert worker.status_code == 200
     assert worker.headers["Service-Worker-Allowed"] == "/"
     assert worker.headers["Cache-Control"] == "no-cache"
+    assert b"marketmon-static-v3" in worker.data
+
+    stylesheet = client.get("/static/dashboard.css")
+    assert stylesheet.status_code == 200
+    assert b"env(safe-area-inset-top, 0px)" in stylesheet.data
 
 
 def test_dashboard_adds_private_app_security_headers(tmp_path: Path) -> None:

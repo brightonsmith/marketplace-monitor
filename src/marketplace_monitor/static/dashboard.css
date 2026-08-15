@@ -45,7 +45,7 @@ h1, h2, h3, p { margin-top: 0; }
 .run-summary { display: flex; gap: 1.1rem; color: var(--muted); font-size: .78rem; }
 .run-summary span { display: flex; flex-direction: column; align-items: center; }
 .run-summary strong { color: var(--ink); font-size: 1rem; }
-.views { position: sticky; z-index: 5; top: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; margin: 1rem 0; padding: .35rem; border: 1px solid var(--line); border-radius: .9rem; background: rgb(242 245 243 / 92%); backdrop-filter: blur(12px); }
+.views { position: sticky; z-index: 5; top: calc(env(safe-area-inset-top, 0px) + .35rem); display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; margin: 1rem 0; padding: .35rem; border: 1px solid var(--line); border-radius: .9rem; background: rgb(242 245 243 / 92%); backdrop-filter: blur(12px); }
 .views a { padding: .65rem .75rem; border-radius: .65rem; color: var(--muted); font-size: .88rem; font-weight: 700; text-align: center; text-decoration: none; white-space: nowrap; }
 .views a span { margin-left: .15rem; color: #8c9993; font-weight: 600; }
 .views a[aria-current="page"] { background: var(--brand-dark); color: white; box-shadow: 0 4px 12px rgb(19 42 36 / 18%); }
